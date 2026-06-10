@@ -1,0 +1,24 @@
+# Python環境（再構築できるので不要）
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# モデルの重みファイル（容量大・自動ダウンロード可能）
+hiragana-asr/models/checkpoints/
+*.pt
+*.bin
+*.safetensors
+
+# macOS
+.DS_Store
+
+# エディタ
+.vscode/
+.idea/
+
+# 一時ファイル
+*.tmp
+*.log
