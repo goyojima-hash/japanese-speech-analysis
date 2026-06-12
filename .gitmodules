@@ -1,0 +1,3 @@
+[submodule "hiragana-asr"]
+	path = hiragana-asr
+	url = https://github.com/nyosegawa/hiragana-asr.git
