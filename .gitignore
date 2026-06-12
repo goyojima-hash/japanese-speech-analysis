@@ -1,5 +1,6 @@
 # Python環境（再構築できるので不要）
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
