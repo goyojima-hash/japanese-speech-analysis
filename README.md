@@ -17,54 +17,51 @@
 ### 前提
 
 - macOS（Apple Silicon 推奨）
+- Git
+- [uv](https://docs.astral.sh/uv/)
 - インターネット接続（モデルの初回ダウンロードに必要）
 
-### 1. uv のインストール（Python バージョン管理）
+### 1. リポジトリのクローン
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source ~/.zshrc  # または ~/.bashrc
+git clone --recurse-submodules https://github.com/goyojima-hash/japanese-speech-analysis.git
+cd japanese-speech-analysis
 ```
 
-### 2. Python 3.11 のインストール
+すでにクローン済みの場合は、submoduleを初期化してください。
+
+```bash
+git submodule update --init --recursive
+```
+
+### 2. Python環境の構築
 
 ```bash
 uv python install 3.11
+uv sync --frozen
 ```
 
-### 3. 仮想環境の作成とライブラリのインストール
+`.python-version`と`uv.lock`に基づいて、プロジェクト内の`.venv/`へ環境が作成されます。
+
+### 3. モデルA チェックポイントのダウンロード（約600MB）
 
 ```bash
-cd /Users/go/工藤っさん
-python3.11 -m venv venv
-venv/bin/pip install --upgrade pip
-venv/bin/pip install torch torchaudio transformers soundfile librosa pandas resampy
-```
-
-### 4. モデルA専用リポジトリのクローン
-
-```bash
-git clone https://github.com/nyosegawa/hiragana-asr.git
-```
-
-### 5. モデルA チェックポイントのダウンロード（約600MB）
-
-```bash
-venv/bin/python -c "
+uv run python - <<'PY'
 from huggingface_hub import hf_hub_download
+
 hf_hub_download(
-    repo_id='sakasegawa/japanese-wav2vec2-large-hiragana-ctc',
-    filename='best-medium-ep5-inference.pt',
-    local_dir='hiragana-asr/models/checkpoints'
+    repo_id="sakasegawa/japanese-wav2vec2-large-hiragana-ctc",
+    filename="best-medium-ep5-inference.pt",
+    local_dir="hiragana-asr/models/checkpoints",
 )
-print('ダウンロード完了')
-"
+print("ダウンロード完了")
+PY
 ```
 
-### 6. モデルB・C の初回ダウンロード確認
+### 4. 3モデルの読み込み確認
 
 ```bash
-venv/bin/python check_models.py
+uv run python check_models.py
 ```
 
 ---
@@ -72,16 +69,18 @@ venv/bin/python check_models.py
 ## フォルダ構成
 
 ```
-工藤っさん/
+japanese-speech-analysis/
 ├── audio/                          # 音声ファイル（MP3/WAV等）
 │   ├── burmese_japanese_1min.mp3
 │   ├── indonesian_japanese_1min.mp3
 │   └── vietnamese_japanese_1min.mp3
-├── hiragana-asr/                   # モデルA用リポジトリ
+├── hiragana-asr/                   # モデルA用submodule
 │   ├── models/checkpoints/
 │   │   └── best-medium-ep5-inference.pt  # チェックポイント（要ダウンロード）
 │   └── src/asr/                    # モデルAの推論コード
-├── venv/                           # Python 3.11 仮想環境
+├── .venv/                          # uvが作成するPython仮想環境
+├── pyproject.toml                  # 直接依存関係
+├── uv.lock                         # 解決済み依存関係
 ├── check_models.py                 # フェーズ1: モデル読み込み確認
 ├── phase2_single_test.py           # フェーズ2: 単体動作確認
 ├── phase3_batch.py                 # フェーズ3: 一括処理
@@ -96,8 +95,7 @@ venv/bin/python check_models.py
 ### フェーズ1: モデル読み込み確認
 
 ```bash
-cd /Users/go/工藤っさん
-venv/bin/python check_models.py
+uv run python check_models.py
 ```
 
 3モデルすべて「✓ 読み込み成功」と表示されれば OK。
@@ -105,7 +103,7 @@ venv/bin/python check_models.py
 ### フェーズ2: 単体動作確認（1ファイル）
 
 ```bash
-venv/bin/python phase2_single_test.py
+uv run python phase2_single_test.py
 ```
 
 デフォルトは `audio/vietnamese_japanese_1min.mp3` を対象に3モデルで実行。  
@@ -114,7 +112,7 @@ venv/bin/python phase2_single_test.py
 ### フェーズ3: 一括処理（全ファイル）
 
 ```bash
-venv/bin/python phase3_batch.py
+uv run python phase3_batch.py
 ```
 
 `audio/` フォルダ内の全音声ファイルを3モデルで処理し、`results.csv` に保存。

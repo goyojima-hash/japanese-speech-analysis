@@ -1,0 +1,22 @@
+[project]
+name = "japanese-speech-analysis"
+version = "0.1.0"
+description = "Japanese learner speech transcription and fluency analysis tools"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper>=1.1.0",
+    "huggingface-hub>=0.27.0",
+    "librosa>=0.10.0",
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+    "pykakasi>=2.3.0",
+    "silero-vad>=5.1.2",
+    "soundfile>=0.12.0",
+    "torch>=2.6.0",
+    "torchaudio>=2.6.0",
+    "transformers>=4.47.0",
+]
+
+[tool.uv]
+package = false
