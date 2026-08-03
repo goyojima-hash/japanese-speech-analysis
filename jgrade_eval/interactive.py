@@ -7,7 +7,12 @@ from dataclasses import replace
 from getpass import getpass
 from pathlib import Path
 
-from .audio_pipeline import FluencyExtractor, ObjectiveExtractionError
+from .audio_pipeline import (
+    FluencyExtractor,
+    ObjectiveExtractionError,
+    UnusableAudioError,
+    validate_objective_data,
+)
 from .deliberation import AutoCefrDeliberation, deliberate_auto_cefr
 from .live_judges import (
     PROVIDER_KEY_ENVS,
@@ -59,6 +64,11 @@ def run_interactive(
     try:
         extractor = FluencyExtractor()
         objective_data = extractor.extract(audio_path)
+        validate_objective_data(objective_data)
+    except UnusableAudioError as exc:
+        print("\n[エラー] 評価できない音声です。")
+        print(str(exc))
+        raise SystemExit(2) from exc
     except ObjectiveExtractionError as exc:
         print("\n[エラー] 客観データ抽出に失敗しました。")
         print(str(exc))

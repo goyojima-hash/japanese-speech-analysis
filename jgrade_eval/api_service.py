@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .audio_pipeline import FluencyExtractor
+from .audio_pipeline import FluencyExtractor, validate_objective_data
 from .deliberation import deliberate_auto_cefr
 from .live_judges import (
     JudgeFailure,
@@ -53,6 +53,7 @@ def evaluate_speech_level(
     evaluation_id = f"eval_{uuid4().hex[:12]}"
     created_at = _now_iso()
     objective_data = (extractor or FluencyExtractor()).extract(audio_path)
+    validate_objective_data(objective_data)
     sample_id = external_id or evaluation_id
     roleplay_input = {
         "sample_id": sample_id,
