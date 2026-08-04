@@ -14,6 +14,38 @@ class ObjectiveExtractionError(RuntimeError):
     """Raised when the upstream fluency/STT pipeline cannot produce objective data."""
 
 
+class UnusableAudioError(ObjectiveExtractionError):
+    """Raised when audio was decoded but does not contain enough assessable speech."""
+
+
+MIN_AUDIO_DURATION_SEC = 0.5
+MIN_SPEECH_SEC = 0.5
+MIN_SPEECH_RATIO_PCT = 1.0
+
+
+def validate_objective_data(objective_data: dict[str, Any]) -> None:
+    """Reject silence, noise-only, and effectively empty audio before judging."""
+
+    metrics = objective_data.get("fluency_metrics", {})
+    duration = float(metrics.get("audio_duration_sec") or 0.0)
+    speech_sec = float(metrics.get("speech_sec") or 0.0)
+    speech_ratio = float(metrics.get("speech_ratio_pct") or 0.0)
+    transcript = "".join(str(objective_data.get("raw_transcript_hiragana") or "").split())
+
+    if duration < MIN_AUDIO_DURATION_SEC:
+        raise UnusableAudioError(
+            "評価できない音声です。音声が短すぎます（0.5秒以上必要です）。"
+        )
+    if not transcript:
+        raise UnusableAudioError(
+            "評価できない音声です。有効な日本語発話を文字起こしできませんでした。"
+        )
+    if speech_sec < MIN_SPEECH_SEC or speech_ratio < MIN_SPEECH_RATIO_PCT:
+        raise UnusableAudioError(
+            "評価できない音声です。有効な発話を十分に検出できませんでした。"
+        )
+
+
 class FluencyExtractor:
     """Extract objective transcript and timing metrics once models are loaded."""
 
@@ -122,6 +154,7 @@ def evaluate_audio_manifest(
     for roleplay in manifest["roleplays"]:
         audio_path = _resolve_audio_path(base_dir, Path(roleplay["audio_path"]))
         objective_data = extractor.extract(audio_path)
+        validate_objective_data(objective_data)
         roleplay_input = {
             "sample_id": manifest["sample_id"],
             "target_cefr_level": manifest["tested_level"],

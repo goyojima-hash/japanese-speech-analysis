@@ -7,7 +7,13 @@ from dataclasses import replace
 from getpass import getpass
 from pathlib import Path
 
-from .audio_pipeline import FluencyExtractor, ObjectiveExtractionError
+from .audio_pipeline import (
+    FluencyExtractor,
+    ObjectiveExtractionError,
+    UnusableAudioError,
+    validate_objective_data,
+)
+from .consensus import aggregate_task_rating
 from .deliberation import AutoCefrDeliberation, deliberate_auto_cefr
 from .live_judges import (
     PROVIDER_KEY_ENVS,
@@ -59,6 +65,11 @@ def run_interactive(
     try:
         extractor = FluencyExtractor()
         objective_data = extractor.extract(audio_path)
+        validate_objective_data(objective_data)
+    except UnusableAudioError as exc:
+        print("\n[エラー] 評価できない音声です。")
+        print(str(exc))
+        raise SystemExit(2) from exc
     except ObjectiveExtractionError as exc:
         print("\n[エラー] 客観データ抽出に失敗しました。")
         print(str(exc))
@@ -403,10 +414,7 @@ def _build_review_record(
 def _aggregate_auto_task_rating(results: list[AutoLevelJudgeResult]) -> str:
     if not results:
         return ""
-    counts: dict[str, int] = {}
-    for result in results:
-        counts[result.task_rating.value] = counts.get(result.task_rating.value, 0) + 1
-    return sorted(counts.items(), key=lambda item: item[1], reverse=True)[0][0]
+    return aggregate_task_rating(results).value
 
 
 def list_audio_files(audio_dir: Path) -> list[Path]:

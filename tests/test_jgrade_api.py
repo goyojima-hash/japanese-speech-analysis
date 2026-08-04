@@ -33,6 +33,38 @@ class FakeExtractor:
         }
 
 
+class FakeUnusableExtractor:
+    def __init__(self, *, duration: float = 10.0, transcript: str = "", speech_sec: float = 0.0):
+        self.duration = duration
+        self.transcript = transcript
+        self.speech_sec = speech_sec
+
+    def extract(self, audio_path: Path) -> dict:
+        ratio = self.speech_sec / self.duration * 100 if self.duration else 0.0
+        return {
+            "audio_path": str(audio_path),
+            "raw_transcript_hiragana": self.transcript,
+            "raw_transcript_romaji": "",
+            "fluency_metrics": {
+                "audio_duration_sec": self.duration,
+                "speech_sec": self.speech_sec,
+                "speech_ratio_pct": ratio,
+                "pause_total_sec": self.duration - self.speech_sec,
+                "pause_count": 1,
+                "avg_pause_sec": self.duration - self.speech_sec,
+                "max_pause_sec": self.duration - self.speech_sec,
+                "mora_count": len(self.transcript),
+                "mora_per_sec": 0.0,
+                "fluency_grade": "D",
+            },
+            "top_pauses": [],
+            "speech_segments": [],
+            "extraction_time_sec": 0.01,
+            "stt_model": "fake",
+            "vad_model": "fake",
+        }
+
+
 class FakeDownloadResponse:
     content = b"fake audio"
 
@@ -81,6 +113,44 @@ class JGradeApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["error"]["code"], "validation_error")
+
+    def test_create_speech_level_evaluation_rejects_silence_before_judging(self) -> None:
+        client = TestClient(app)
+
+        with patch(
+            "jgrade_eval.api_service.FluencyExtractor",
+            return_value=FakeUnusableExtractor(),
+        ):
+            response = client.post(
+                "/api/v1/speech-level-evaluations",
+                data={"language": "ja", "judge_mode": "mock"},
+                files={"audio": ("silence.wav", b"fake silence", "audio/wav")},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "unusable_audio")
+        self.assertIn("評価できない音声", response.json()["error"]["message"])
+
+    def test_create_speech_level_evaluation_rejects_too_short_audio(self) -> None:
+        client = TestClient(app)
+
+        with patch(
+            "jgrade_eval.api_service.FluencyExtractor",
+            return_value=FakeUnusableExtractor(
+                duration=0.25,
+                transcript="あ",
+                speech_sec=0.25,
+            ),
+        ):
+            response = client.post(
+                "/api/v1/speech-level-evaluations",
+                data={"language": "ja", "judge_mode": "mock"},
+                files={"audio": ("short.wav", b"fake short audio", "audio/wav")},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "unusable_audio")
+        self.assertIn("短すぎます", response.json()["error"]["message"])
 
     def test_create_speech_level_evaluation_accepts_json_audio_url(self) -> None:
         EVALUATIONS.clear()

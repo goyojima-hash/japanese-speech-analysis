@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from .api_service import evaluate_speech_level
-from .audio_pipeline import ObjectiveExtractionError
+from .audio_pipeline import ObjectiveExtractionError, UnusableAudioError
 from .live_judges import load_env_file, parse_provider_specs
 
 
@@ -54,6 +54,8 @@ async def create_speech_level_evaluation(request: Request) -> JSONResponse:
         return JSONResponse({"data": result}, status_code=201)
     except ValueError as exc:
         return _error_response("validation_error", str(exc), status_code=422)
+    except UnusableAudioError as exc:
+        return _error_response("unusable_audio", str(exc), status_code=422)
     except ObjectiveExtractionError as exc:
         return _error_response("audio_processing_failed", str(exc), status_code=422)
     except Exception as exc:
