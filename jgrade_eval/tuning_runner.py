@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .audio_pipeline import FluencyExtractor
+from .consensus import aggregate_task_rating
 from .deliberation import deliberate_auto_cefr
 from .live_judges import (
     JudgeFailure,
@@ -18,14 +19,6 @@ from .mock_judges import judge_auto_cefr_with_mock_panel
 from .models import CEFR_LEVELS, AutoLevelJudgeResult, Rating
 from .tuning_profile import TuningProfile, compose_auto_cefr_system_prompt, load_profile
 from .tuning_store import make_run_id, read_json, write_json
-
-
-TASK_RATING_ORDER = {
-    Rating.FAIL: 0,
-    Rating.NEAR_FAIL: 1,
-    Rating.PASS: 2,
-    Rating.EXCELLENT: 3,
-}
 
 
 def run_tuning_dataset(
@@ -182,14 +175,6 @@ def compute_cefr_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         ],
         "level_counts": dict(Counter(record.get("human_cefr") for record in evaluable)),
     }
-
-
-def aggregate_task_rating(results: list[AutoLevelJudgeResult]) -> Rating:
-    counts = Counter(result.task_rating for result in results)
-    rating, count = counts.most_common(1)[0]
-    if count > len(results) / 2:
-        return rating
-    return sorted((result.task_rating for result in results), key=TASK_RATING_ORDER.get)[0]
 
 
 def is_adjacent_level(human_level: str | None, predicted_level: str | None) -> bool:

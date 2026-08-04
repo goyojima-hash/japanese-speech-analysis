@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from jgrade_eval.consensus import AutoCefrConsensus, ConsensusGate
+from jgrade_eval.consensus import AutoCefrConsensus, ConsensusGate, aggregate_task_rating
 from jgrade_eval.deliberation import deliberate_auto_cefr
 from jgrade_eval.jfs_samples import (
     build_jfs_tuning_dataset,
@@ -586,7 +586,7 @@ class LiveJudgeConfigTests(unittest.TestCase):
         self.assertEqual(failures[0].judge_id, "B")
         self.assertIn("Gemini認証に失敗", failures[0].message)
 
-    def test_partial_live_panel_retries_invalid_json_once(self) -> None:
+    def test_partial_live_panel_retries_invalid_json_until_valid(self) -> None:
         from unittest.mock import patch
 
         calls = {"gemini": 0}
@@ -596,7 +596,7 @@ class LiveJudgeConfigTests(unittest.TestCase):
             if spec.provider == "gemini":
                 calls["gemini"] += 1
                 gemini_user_messages.append(messages["user"])
-                if calls["gemini"] == 1:
+                if calls["gemini"] < 3:
                     return '{"predicted_cefr_level":"C1",'
             return (
                 '{"predicted_cefr_level":"C1","task_rating":"○",'
@@ -620,8 +620,28 @@ class LiveJudgeConfigTests(unittest.TestCase):
 
         self.assertEqual(len(results), 3)
         self.assertEqual(failures, [])
-        self.assertEqual(calls["gemini"], 2)
+        self.assertEqual(calls["gemini"], 3)
         self.assertIn("前回の応答はJSONとして解析できませんでした", gemini_user_messages[-1])
+        self.assertIn("rationaleは120文字以内", gemini_user_messages[-1])
+
+    def test_task_rating_aggregation_is_shared_median_rule(self) -> None:
+        results = [
+            AutoLevelJudgeResult.from_dict(
+                {
+                    "judge_id": judge_id,
+                    "model_family": "test",
+                    "predicted_cefr_level": "B1",
+                    "task_rating": rating,
+                    "confidence": 0.8,
+                    "rationale": "test",
+                    "evidence": [],
+                    "risk_flags": [],
+                }
+            )
+            for judge_id, rating in (("A", "×"), ("B", "○"), ("C", "◎"))
+        ]
+
+        self.assertEqual(aggregate_task_rating(results), Rating.PASS)
 
 
 class InteractiveCliTests(unittest.TestCase):

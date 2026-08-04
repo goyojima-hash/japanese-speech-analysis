@@ -607,13 +607,13 @@ def _call_and_parse_auto_level(
 ) -> AutoLevelJudgeResult:
     retry_messages = messages
     last_parse_error: Exception | None = None
-    for attempt in range(2):
+    for attempt in range(3):
         response_text = _call_provider(spec, retry_messages, timeout_sec=timeout_sec)
         try:
             return _parse_auto_level_response(response_text, judge_id, spec)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             last_parse_error = exc
-            if attempt == 1:
+            if attempt == 2:
                 break
             retry_messages = {
                 **messages,
@@ -624,6 +624,8 @@ def _call_and_parse_auto_level(
                     "指定schemaを満たす1個の完全なJSON objectだけを返してください。"
                     "必須キー: judge_id, model_family, predicted_cefr_level, "
                     "task_rating, confidence, rationale, evidence, risk_flags。"
+                    "途中で切れないよう、rationaleは120文字以内、"
+                    "evidenceは3件以内、risk_flagsは3件以内にしてください。"
                 ),
             }
     assert last_parse_error is not None

@@ -14,6 +14,33 @@ from .models import (
 )
 
 
+TASK_RATING_ORDER = {
+    Rating.FAIL: 0,
+    Rating.NEAR_FAIL: 1,
+    Rating.PASS: 2,
+    Rating.EXCELLENT: 3,
+}
+
+
+def aggregate_task_rating(results: list[AutoLevelJudgeResult]) -> Rating:
+    """Use one task-rating rule across API, batch, and interactive entrypoints."""
+
+    if not results:
+        raise ValueError("at least one Judge result is required.")
+    counts = Counter(result.task_rating for result in results)
+    rating, count = counts.most_common(1)[0]
+    if count > len(results) / 2:
+        return rating
+
+    sorted_ratings = sorted(
+        (result.task_rating for result in results),
+        key=TASK_RATING_ORDER.get,
+    )
+    if len(sorted_ratings) == 2:
+        return sorted_ratings[0]
+    return sorted_ratings[len(sorted_ratings) // 2]
+
+
 class ConsensusGate:
     """Aggregate independent LLM judge ratings into a CEFR level decision."""
 

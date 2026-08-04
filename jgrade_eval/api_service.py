@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from .audio_pipeline import FluencyExtractor, validate_objective_data
+from .consensus import aggregate_task_rating
 from .deliberation import deliberate_auto_cefr
 from .live_judges import (
     JudgeFailure,
@@ -16,14 +16,6 @@ from .live_judges import (
 from .mock_judges import judge_auto_cefr_with_mock_panel
 from .models import AutoLevelJudgeResult, Rating
 from .tuning_profile import TuningProfile, compose_auto_cefr_system_prompt
-
-
-TASK_RATING_ORDER = {
-    Rating.FAIL: 0,
-    Rating.NEAR_FAIL: 1,
-    Rating.PASS: 2,
-    Rating.EXCELLENT: 3,
-}
 
 
 def evaluate_speech_level(
@@ -87,7 +79,7 @@ def evaluate_speech_level(
         profile=profile,
     )
     decision = deliberation.final_decision
-    task_rating = _aggregate_task_rating(judge_results)
+    task_rating = aggregate_task_rating(judge_results)
     confidence = _aggregate_confidence(judge_results, decision.final_cefr_level)
     reasons = _build_reasons(
         final_level=decision.final_cefr_level,
@@ -135,17 +127,6 @@ def evaluate_speech_level(
     if include_objective_data:
         payload["objective_data"] = _public_objective_data(objective_data)
     return payload
-
-
-def _aggregate_task_rating(results: list[AutoLevelJudgeResult]) -> Rating:
-    counts = Counter(result.task_rating for result in results)
-    rating, count = counts.most_common(1)[0]
-    if count > len(results) / 2:
-        return rating
-    sorted_ratings = sorted((result.task_rating for result in results), key=TASK_RATING_ORDER.get)
-    if len(sorted_ratings) == 2:
-        return sorted_ratings[0]
-    return sorted_ratings[len(sorted_ratings) // 2]
 
 
 def _aggregate_confidence(results: list[AutoLevelJudgeResult], final_level: str) -> float:
