@@ -50,6 +50,7 @@ async def create_speech_level_evaluation(request: Request) -> JSONResponse:
             timeout_sec=float(payload.get("timeout_sec", 60.0)),
             include_objective_data=_parse_bool(payload.get("include_objective_data"), default=True),
             selected_modules=_parse_optional_module_list(payload.get("fact_modules")),
+            interaction_context=_coerce_json_object(payload.get("interaction_context")),
         )
         EVALUATIONS[result["id"]] = result
         return JSONResponse({"data": result}, status_code=201)
@@ -96,6 +97,7 @@ async def _read_request_payload(request: Request, temp_dir: Path) -> tuple[dict[
             "include_objective_data": _parse_bool(form.get("include_objective_data"), default=True),
             "fact_modules": _parse_optional_module_list(form.get("fact_modules")),
             "env_file": _optional_form_value(form.get("env_file")),
+            "interaction_context": _parse_json_object_field(form.get("interaction_context")),
         }
         return payload, audio_path
 
@@ -114,6 +116,7 @@ async def _read_request_payload(request: Request, temp_dir: Path) -> tuple[dict[
         payload.setdefault("jfs_can_do_criteria", [])
         payload.setdefault("speaker_metadata", {})
         payload.setdefault("judge_mode", "mock")
+        payload.setdefault("interaction_context", {})
         payload["include_objective_data"] = _parse_bool(
             payload.get("include_objective_data"),
             default=True,
@@ -171,6 +174,12 @@ def _parse_json_object_field(value: Any) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("speaker_metadata must be a JSON object.")
     return parsed
+
+
+def _coerce_json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return _parse_json_object_field(value)
 
 
 def _parse_bool(value: Any, *, default: bool) -> bool:

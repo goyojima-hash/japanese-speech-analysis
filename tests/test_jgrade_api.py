@@ -83,9 +83,10 @@ class JGradeApiTests(unittest.TestCase):
         self.assertEqual(judge_inputs[0]["range_data"], result["objective_data"]["range_data"])
         self.assertNotIn("fluency_grade", result["objective_data"]["fluency_metrics"])
         self.assertEqual(result["objective_data"]["evidence_schema_version"], "evidence.v1")
-        self.assertEqual(result["fact_modules"], ["accuracy", "coherence", "fluency", "range"])
+        self.assertEqual(result["fact_modules"], ["accuracy", "coherence", "fluency", "interaction", "range"])
         self.assertIn("accuracy_data", result["objective_data"])
         self.assertIn("coherence_data", result["objective_data"])
+        self.assertIn("interaction_data", result["objective_data"])
         self.assertIn("accuracy_data", judge_inputs[0])
         self.assertIn("coherence_data", judge_inputs[0])
 
@@ -229,6 +230,22 @@ class JGradeApiTests(unittest.TestCase):
         self.assertEqual(data["fact_modules"], ["accuracy"])
         self.assertIn("accuracy_data", data["objective_data"])
         self.assertNotIn("range_data", data["objective_data"])
+
+    def test_http_api_accepts_prompt_set_and_confirmed_answer_segment(self) -> None:
+        EVALUATIONS.clear()
+        client = TestClient(app)
+        with patch("jgrade_eval.api_service.FluencyExtractor", return_value=FakeExtractor()):
+            response = client.post(
+                "/api/v1/speech-level-evaluations",
+                data={
+                    "judge_mode": "mock",
+                    "interaction_context": '{"recording_mode":"monologue","prompts":[{"prompt_id":"q1","text":"趣味は何ですか"}],"answer_segments":[{"start_sec":0,"end_sec":60,"prompt_id":"q1"}]}'
+                }, files={"audio": ("sample.mp3", b"fake audio", "audio/mpeg")},
+            )
+        self.assertEqual(response.status_code, 201)
+        interaction = response.json()["data"]["objective_data"]["interaction_data"]
+        self.assertTrue(interaction["recording_observation"]["prompt_available"])
+        self.assertEqual(interaction["candidate_answer_segments"][0]["mapping_status"], "confirmed")
 
 
 if __name__ == "__main__":

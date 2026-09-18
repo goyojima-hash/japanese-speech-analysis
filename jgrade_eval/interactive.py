@@ -60,6 +60,7 @@ def run_interactive(
     profile_path: Path | None = None,
     review_store_path: Path | None = DEFAULT_REVIEW_DATASET_PATH,
 ) -> None:
+    selected_modules = prompt_fact_module_selection()
     judge_mode, provider_specs = prompt_judge_setup(judge_mode, provider_specs or [])
     audio_path = prompt_audio_choice(list_audio_files(audio_dir))
 
@@ -77,13 +78,14 @@ def run_interactive(
         print(str(exc))
         raise SystemExit(2) from exc
     print_common_evidence_data(evidence)
-    print("\n[2/7] Fluencyモジュール: 共有Evidenceから流暢性の客観データを表示中...")
-    print_fluency_data(objective_data)
+    if "fluency" in selected_modules:
+        print("\n[2/7] Fluencyモジュール: 共有Evidenceから流暢性の客観データを表示中...")
+        print_fluency_data(objective_data)
 
-    module_steps = {"range": 3, "accuracy": 4, "coherence": 5}
+    module_steps = {"range": 3, "accuracy": 4, "coherence": 5, "interaction": 6}
 
     def print_module_start(module_id: str) -> None:
-        labels = {"range": "Range", "accuracy": "Accuracy", "coherence": "Coherence"}
+        labels = {"range": "Range", "accuracy": "Accuracy", "coherence": "Coherence", "interaction": "Interaction"}
         print(f"\n[{module_steps[module_id]}/7] {labels[module_id]}モジュール: 共有Evidenceから客観データを抽出中...")
 
     def print_module_result(module_id: str, packet: dict) -> None:
@@ -93,11 +95,13 @@ def run_interactive(
             print_accuracy_data(packet)
         elif module_id == "coherence":
             print_coherence_data(packet)
+        elif module_id == "interaction":
+            print_interaction_data(packet)
 
     try:
         fact_modules = run_fact_modules(
             evidence,
-            selected_modules=INTERACTIVE_FACT_MODULES,
+            selected_modules=selected_modules,
             on_module_start=print_module_start,
             on_module_result=print_module_result,
         )
@@ -121,7 +125,7 @@ def run_interactive(
         "roleplay_task": "不明",
         "jfs_can_do_criteria": [],
         "raw_transcript_hiragana": objective_data["raw_transcript_hiragana"],
-        "fluency_metrics": objective_data["fluency_metrics"],
+        "fluency_metrics": objective_data["fluency_metrics"] if "fluency" in selected_modules else {},
         "speaker_metadata": {},
         "optional_expected_information": [],
     }
@@ -730,6 +734,35 @@ def print_objective_data(objective_data: dict) -> None:
     print("注: Coherenceモジュールは観測事実のみを出力します。候補境界や反復は品質・正誤・レベルの判定ではありません。")
 
 
+def prompt_fact_module_selection() -> frozenset[str]:
+    options = [
+        ("fluency", "Fluency（流暢さ）: 発話速度、ポーズ、発話率、モーラ時刻"),
+        ("range", "Range（範囲）: 語彙の種類、TTR、JLPT語彙分布、未知語候補"),
+        ("accuracy", "Accuracy（正確さ）: 文法・語法の観測事実（正誤は判定しない）"),
+        ("coherence", "Coherence（まとまり）: 接続表現、候補談話単位、語彙反復、ポーズ"),
+        ("interaction", "Interaction（やりとり）: 設問と解答があると根拠が増える。設問なしでは録音全体の観測のみ"),
+    ]
+    print("\n=== 実行する客観モジュール ===")
+    print("Enter: 5モジュールすべてを実行（推奨）")
+    print("不要なモジュールを外す場合は、使う番号をカンマ区切りで入力します。例: 1,2,4")
+    for number, (_, description) in enumerate(options, 1):
+        print(f"  {number}. {description}")
+    while True:
+        try:
+            raw = input("番号 [Enter=すべて]: ").strip()
+        except EOFError:
+            return INTERACTIVE_FACT_MODULES
+        if not raw:
+            return INTERACTIVE_FACT_MODULES
+        try:
+            numbers = {int(item.strip()) for item in raw.split(",") if item.strip()}
+        except ValueError:
+            numbers = set()
+        if numbers and all(1 <= number <= len(options) for number in numbers):
+            return frozenset(options[number - 1][0] for number in numbers)
+        print(f"1〜{len(options)} の番号をカンマ区切りで入力してください。")
+
+
 def print_fluency_data(objective_data: dict) -> None:
     metrics = objective_data["fluency_metrics"]
     transcript = objective_data["raw_transcript_hiragana"]
@@ -812,6 +845,19 @@ def print_coherence_data(coherence_data: dict) -> None:
     if unavailable_capabilities:
         print(f"未提供の能力: {', '.join(str(item) for item in unavailable_capabilities)}")
     print("注: Coherenceモジュールは観測事実のみを出力します。候補境界や反復は品質・正誤・レベルの判定ではありません。")
+
+
+def print_interaction_data(interaction_data: dict) -> None:
+    observation = interaction_data.get("recording_observation", {})
+    print("\n=== Interaction客観データ ===")
+    print("生成元: Interactionモジュール（共有Evidence、LLM不使用）")
+    print(f"録音形態: {observation.get('recording_mode', 'unknown')} / 検出話者数: {observation.get('detected_speaker_count', 'unknown')}")
+    print(f"設問あり: {observation.get('prompt_available', False)} / 回答候補: {len(interaction_data.get('candidate_answer_segments', []))}件")
+    print(f"対話表現候補: {len(interaction_data.get('interaction_marker_candidates', []))}件")
+    unavailable = interaction_data.get("unavailable_capabilities", [])
+    if unavailable:
+        print(f"未提供の能力: {', '.join(str(item) for item in unavailable)}")
+    print("注: 設問と解答区間があると根拠が増えます。話者ターン等は対応する共通前処理の追加後に取得します。")
 
 
 def print_judge_results(judge_results: list[JudgeResult]) -> None:

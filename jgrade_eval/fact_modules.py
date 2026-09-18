@@ -8,10 +8,11 @@ from typing import Any, Callable, Iterable, Mapping
 from .accuracy import AccuracyModule
 from .coherence import CoherenceModule
 from .evidence.models import EvidenceBundle
+from .interaction import InteractionModule
 from .range import RangeExtractor
 
 
-SUPPORTED_FACT_MODULES = frozenset({"fluency", "range", "accuracy", "coherence"})
+SUPPORTED_FACT_MODULES = frozenset({"fluency", "range", "accuracy", "coherence", "interaction"})
 DEFAULT_FACT_MODULES = SUPPORTED_FACT_MODULES
 INTERACTIVE_FACT_MODULES = SUPPORTED_FACT_MODULES
 
@@ -35,6 +36,8 @@ def run_fact_modules(
     *,
     selected_modules: Iterable[str] | None = None,
     range_extractor: RangeExtractor | None = None,
+    prompt_text: str | None = None,
+    interaction_context: Mapping[str, Any] | None = None,
     on_module_start: Callable[[str], None] | None = None,
     on_module_result: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> FactModuleRun:
@@ -60,6 +63,12 @@ def run_fact_modules(
         _notify_start(on_module_start, "coherence")
         packets["coherence_data"] = CoherenceModule().collect(evidence).to_dict()
         _notify_result(on_module_result, "coherence", packets["coherence_data"])
+    if "interaction" in active_modules:
+        _notify_start(on_module_start, "interaction")
+        packets["interaction_data"] = InteractionModule().collect(
+            evidence, prompt_text=prompt_text, interaction_context=interaction_context
+        ).to_dict()
+        _notify_result(on_module_result, "interaction", packets["interaction_data"])
     return FactModuleRun(active_modules=active_modules, packets=packets)
 
 

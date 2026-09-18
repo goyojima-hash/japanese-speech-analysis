@@ -66,6 +66,8 @@ class FactModuleRunnerTests(unittest.TestCase):
         self.assertEqual(default_result.active_modules, SUPPORTED_FACT_MODULES)
         self.assertIn("accuracy_data", default_result.packets)
         self.assertIn("coherence_data", default_result.packets)
+        self.assertIn("interaction_data", default_result.packets)
+        self.assertEqual(default_result.packets["interaction_data"]["recording_observation"]["recording_mode"], "monologue")
         with self.assertRaisesRegex(ValueError, "unsupported fact module"):
             run_fact_modules(self.bundle, selected_modules=("unknown",))
 
@@ -84,6 +86,29 @@ class FactModuleRunnerTests(unittest.TestCase):
 
         self.assertEqual(started, ["range", "accuracy", "coherence"])
         self.assertEqual(completed, ["range", "accuracy", "coherence"])
+
+    def test_interaction_uses_prompt_as_context_without_grading_it(self) -> None:
+        from jgrade_eval.fact_modules import run_fact_modules
+
+        result = run_fact_modules(self.bundle, selected_modules=("interaction",), prompt_text="趣味を教えてください")
+        data = result.packets["interaction_data"]
+        self.assertTrue(data["recording_observation"]["prompt_available"])
+        self.assertEqual(data["candidate_answer_segments"][0]["mapping_status"], "candidate")
+        self.assertNotIn("score", data)
+
+    def test_interaction_accepts_confirmed_prompt_segment(self) -> None:
+        from jgrade_eval.fact_modules import run_fact_modules
+
+        data = run_fact_modules(
+            self.bundle, selected_modules=("interaction",),
+            interaction_context={
+                "recording_mode": "monologue",
+                "prompts": [{"prompt_id": "q1", "text": "趣味を教えてください"}],
+                "answer_segments": [{"start_sec": 0.0, "end_sec": 2.0, "prompt_id": "q1"}],
+            },
+        ).packets["interaction_data"]
+        self.assertEqual(data["candidate_answer_segments"][0]["mapping_status"], "confirmed")
+        self.assertEqual(data["candidate_answer_segments"][0]["prompt_id"], "q1")
 
 
 class _FakeRangeExtractor:

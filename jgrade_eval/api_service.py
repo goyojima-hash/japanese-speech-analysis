@@ -46,6 +46,7 @@ def evaluate_speech_level(
     range_extractor: RangeExtractor | None = None,
     evidence_pipeline: EvidencePipeline | None = None,
     selected_modules: Iterable[str] | None = None,
+    interaction_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate one speech file and return an API-shaped completed result."""
 
@@ -67,6 +68,8 @@ def evaluate_speech_level(
         evidence,
         selected_modules=selected_modules,
         range_extractor=range_extractor,
+        prompt_text=roleplay_task,
+        interaction_context=interaction_context,
     )
     active_modules = fact_modules.active_modules
     objective_data = fact_modules.merge_objective_data(

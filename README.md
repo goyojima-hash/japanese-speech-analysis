@@ -482,7 +482,7 @@ uv run python -m unittest discover -s tests
 
 HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまたは `audio_url` を受け取り、`final_cefr_level`、`summary`、`reasons`、`objective_data`、`judge_results`、`needs_human_review` を返します。現在のローカルAPIは1リクエスト内で処理を完了して返すMVPです。将来の外部System統合では、同じレスポンス形を保ったまま非同期ジョブ化する想定です。
 
-`objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data` が入ります。通常のConsole／HTTP API実行はこの4モジュールすべてを既定で使います。RangeはSudachiPyの固定分割モードAと同梱JLPT語彙スナップショットを使い、トークン、TTR、JLPT分布、未知語、同音異義語候補を記録します。AccuracyとCoherenceも含め、各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
+`objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data`、Interaction観測 `interaction_data` が入ります。通常のConsole／HTTP API実行はこの5モジュールすべてを既定で使います。Interactionは録音形態、VADポーズ由来の回答候補、設問の有無、対話表現候補、未提供能力を記録します。`interaction_context` に設問集合と確定済みの回答時刻区間を渡すと、それらを明示的な来歴として保存できます。各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
 
 自分で用意した複数音声をmanifestで試す場合は、`examples/jgrade_audio_manifest.json` と同じ形式で、候補者・試験レベル・ロールプレイごとの `audio_path`、タスク、JFS can-do基準、期待される情報を指定できます。`extract-objective` はこのリポジトリの `fluency.py` を使い、ひらがな文字起こし、発話率、ポーズ、モーラ速度、発話区間を出力します。`judge-mode mock` はAPIキーなしの疎通確認用で、正式なJFS判定ではありません。
 
