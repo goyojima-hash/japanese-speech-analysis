@@ -81,6 +81,66 @@ class JGradeApiTests(unittest.TestCase):
         ])
         self.assertEqual(result["objective_data"]["range_data"]["dictionary_version"], "fake-range-dictionary")
         self.assertEqual(judge_inputs[0]["range_data"], result["objective_data"]["range_data"])
+        self.assertNotIn("fluency_grade", result["objective_data"]["fluency_metrics"])
+        self.assertEqual(result["objective_data"]["evidence_schema_version"], "evidence.v1")
+        self.assertEqual(result["fact_modules"], ["accuracy", "coherence", "fluency", "range"])
+        self.assertIn("accuracy_data", result["objective_data"])
+        self.assertIn("coherence_data", result["objective_data"])
+        self.assertIn("accuracy_data", judge_inputs[0])
+        self.assertIn("coherence_data", judge_inputs[0])
+
+    def test_service_can_select_accuracy_without_running_range(self) -> None:
+        range_extractor = FakeRangeExtractor()
+        judge_inputs: list[dict] = []
+
+        def capture_judge_input(roleplay_input: dict):
+            judge_inputs.append(roleplay_input)
+            return judge_auto_cefr_with_mock_panel(roleplay_input)
+
+        with patch("jgrade_eval.api_service.judge_auto_cefr_with_mock_panel", side_effect=capture_judge_input):
+            result = evaluate_speech_level(
+                Path("sample.mp3"),
+                judge_mode="mock",
+                extractor=FakeExtractor(),
+                range_extractor=range_extractor,
+                selected_modules=("accuracy",),
+            )
+
+        self.assertEqual(range_extractor.transcripts, [])
+        self.assertIn("accuracy_data", result["objective_data"])
+        self.assertNotIn("range_data", result["objective_data"])
+        self.assertIn("accuracy_data", judge_inputs[0])
+
+    def test_service_can_select_coherence_without_running_range(self) -> None:
+        range_extractor = FakeRangeExtractor()
+        judge_inputs: list[dict] = []
+
+        def capture_judge_input(roleplay_input: dict):
+            judge_inputs.append(roleplay_input)
+            return judge_auto_cefr_with_mock_panel(roleplay_input)
+
+        with patch("jgrade_eval.api_service.judge_auto_cefr_with_mock_panel", side_effect=capture_judge_input):
+            result = evaluate_speech_level(
+                Path("sample.mp3"),
+                judge_mode="mock",
+                extractor=FakeExtractor(),
+                range_extractor=range_extractor,
+                selected_modules=("coherence",),
+            )
+
+        self.assertEqual(range_extractor.transcripts, [])
+        self.assertIn("coherence_data", result["objective_data"])
+        self.assertNotIn("range_data", result["objective_data"])
+        self.assertIn("coherence_data", judge_inputs[0])
+
+    def test_service_rejects_unknown_fact_module(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported fact module"):
+            evaluate_speech_level(
+                Path("sample.mp3"),
+                judge_mode="mock",
+                extractor=FakeExtractor(),
+                selected_modules=("not-a-module",),
+            )
 
     def test_create_speech_level_evaluation_returns_completed_result(self) -> None:
         EVALUATIONS.clear()
@@ -146,6 +206,29 @@ class JGradeApiTests(unittest.TestCase):
         self.assertEqual(data["external_id"], "json-sample")
         self.assertEqual(data["final_cefr_level"], "B1")
         self.assertNotIn("objective_data", data)
+
+    def test_http_api_can_select_accuracy_fact_module(self) -> None:
+        EVALUATIONS.clear()
+        client = TestClient(app)
+
+        with (
+            patch("jgrade_eval.api.requests.get", return_value=FakeDownloadResponse()),
+            patch("jgrade_eval.api_service.FluencyExtractor", return_value=FakeExtractor()),
+        ):
+            response = client.post(
+                "/api/v1/speech-level-evaluations",
+                json={
+                    "audio_url": "https://example.com/sample.mp3",
+                    "judge_mode": "mock",
+                    "fact_modules": ["accuracy"],
+                },
+            )
+
+        self.assertEqual(response.status_code, 201)
+        data = response.json()["data"]
+        self.assertEqual(data["fact_modules"], ["accuracy"])
+        self.assertIn("accuracy_data", data["objective_data"])
+        self.assertNotIn("range_data", data["objective_data"])
 
 
 if __name__ == "__main__":

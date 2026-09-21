@@ -786,7 +786,7 @@ class InteractiveCliTests(unittest.TestCase):
         self.assertIn("JLPT N5: token=2 / unique_lemma=2", rendered)
         self.assertNotIn("=== 客観データ ===", rendered)
 
-    def test_interactive_adds_range_evidence_without_prompting_for_user_cefr(self) -> None:
+    def test_interactive_prints_shared_and_accuracy_evidence_without_prompting_for_user_cefr(self) -> None:
         import io
         from contextlib import redirect_stdout
 
@@ -839,7 +839,7 @@ class InteractiveCliTests(unittest.TestCase):
             patch("jgrade_eval.interactive.prompt_judge_setup", return_value=("mock", [])),
             patch("jgrade_eval.interactive.prompt_audio_choice", return_value=Path("sample.wav")),
             patch("jgrade_eval.interactive.FluencyExtractor", return_value=fluency_extractor),
-            patch.object(RangeExtractor, "default", return_value=range_extractor),
+            patch("jgrade_eval.fact_modules.RangeExtractor.default", return_value=range_extractor),
             patch("jgrade_eval.interactive.judge_auto_cefr_with_mock_panel", side_effect=capture_judge_input),
             patch("jgrade_eval.interactive.prompt_user_cefr_level", return_value=None) as prompt_level,
         ):
@@ -855,9 +855,17 @@ class InteractiveCliTests(unittest.TestCase):
 
         range_extractor.analyze.assert_called_once_with("わたしはすしがすきです")
         self.assertEqual(judge_inputs[0]["range_data"], range_data)
+        self.assertEqual(judge_inputs[0]["accuracy_data"]["module_id"], "accuracy")
+        self.assertEqual(judge_inputs[0]["coherence_data"]["module_id"], "coherence")
         prompt_level.assert_not_called()
-        self.assertIn("[1/5] Fluencyモジュール", output.getvalue())
-        self.assertIn("[2/5] Rangeモジュール", output.getvalue())
+        self.assertIn("[1/7] 共通Evidence層", output.getvalue())
+        self.assertIn("[2/7] Fluencyモジュール", output.getvalue())
+        self.assertIn("[3/7] Rangeモジュール", output.getvalue())
+        self.assertIn("[4/7] Accuracyモジュール", output.getvalue())
+        self.assertIn("[5/7] Coherenceモジュール", output.getvalue())
+        self.assertIn("=== 共通Evidence層客観データ ===", output.getvalue())
+        self.assertIn("=== Accuracy客観データ ===", output.getvalue())
+        self.assertIn("=== Coherence客観データ ===", output.getvalue())
 
 
 class TuningTests(unittest.TestCase):

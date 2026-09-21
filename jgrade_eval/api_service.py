@@ -3,11 +3,14 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from uuid import uuid4
 
 from .audio_pipeline import FluencyExtractor
 from .deliberation import deliberate_auto_cefr
+from .evidence import EvidencePipeline, FluencySpeechEvidenceExtractor, LinguisticEvidenceExtractor
+from .evidence.speech import objective_data_from_evidence
+from .fact_modules import DEFAULT_FACT_MODULES, SUPPORTED_FACT_MODULES, run_fact_modules
 from .live_judges import (
     JudgeFailure,
     ProviderSpec,
@@ -26,7 +29,6 @@ TASK_RATING_ORDER = {
     Rating.EXCELLENT: 3,
 }
 
-
 def evaluate_speech_level(
     audio_path: Path,
     *,
@@ -42,6 +44,8 @@ def evaluate_speech_level(
     profile: TuningProfile | None = None,
     extractor: FluencyExtractor | None = None,
     range_extractor: RangeExtractor | None = None,
+    evidence_pipeline: EvidencePipeline | None = None,
+    selected_modules: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """Evaluate one speech file and return an API-shaped completed result."""
 
@@ -54,11 +58,21 @@ def evaluate_speech_level(
 
     evaluation_id = f"eval_{uuid4().hex[:12]}"
     created_at = _now_iso()
-    objective_data = (extractor or FluencyExtractor()).extract(audio_path)
-    range_data = (range_extractor or RangeExtractor.default()).analyze(
-        str(objective_data["raw_transcript_hiragana"])
+    active_pipeline = evidence_pipeline or EvidencePipeline(
+        speech_extractor=FluencySpeechEvidenceExtractor(extractor or FluencyExtractor()),
+        linguistic_extractor=LinguisticEvidenceExtractor(),
     )
-    objective_data["range_data"] = range_data
+    evidence = active_pipeline.build(audio_path)
+    fact_modules = run_fact_modules(
+        evidence,
+        selected_modules=selected_modules,
+        range_extractor=range_extractor,
+    )
+    active_modules = fact_modules.active_modules
+    objective_data = fact_modules.merge_objective_data(
+        objective_data_from_evidence(evidence.speech, audio_path=str(audio_path))
+    )
+    objective_data["evidence_schema_version"] = evidence.schema_version
     sample_id = external_id or evaluation_id
     roleplay_input = {
         "sample_id": sample_id,
@@ -68,10 +82,10 @@ def evaluate_speech_level(
         "jfs_can_do_criteria": jfs_can_do_criteria or [],
         "raw_transcript_hiragana": objective_data["raw_transcript_hiragana"],
         "fluency_metrics": objective_data["fluency_metrics"],
-        "range_data": range_data,
         "speaker_metadata": speaker_metadata or {},
         "optional_expected_information": [],
     }
+    roleplay_input = fact_modules.add_packets_to_roleplay_input(roleplay_input)
 
     judge_failures: list[JudgeFailure] = []
     if judge_mode == "mock":
@@ -108,6 +122,7 @@ def evaluate_speech_level(
         "status": "completed",
         "language": language,
         "judge_mode": judge_mode,
+        "fact_modules": sorted(active_modules),
         "final_cefr_level": decision.final_cefr_level,
         "task_rating": task_rating.value,
         "confidence": confidence,

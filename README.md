@@ -25,6 +25,9 @@
 | 音声ファイルの読み込み | 実装済み | MP3、WAV、M4A、FLAC、OGGをローカルConsoleで選択できる。HTTP APIはMP3、WAV、M4Aに対応。 |
 | ひらがな文字起こし | 実装済み | 日本語を漢字へ直したり、意味を補ったりせず、音声から聞き取れたひらがなを残す。 |
 | 流暢さの測定 | 実装済み | 発話率、ポーズ数、最長ポーズ、1秒あたりのモーラ数などを計算する。 |
+| 語彙のRange事実 | 実装済み | 共有トークンから語彙数、TTR、JLPT語彙分布、未知語、同音異義語候補を記録する。 |
+| 正確さのAccuracy事実 | 実装済み | モーラ時刻、形態素、明示的な参照文との差分などを観測値として記録する。誤りやレベルは判定しない。 |
+| まとまりのCoherence事実 | 実装済み | 接続表現、候補単位、反復、ポーズを観測値として記録する。良し悪しは判定しない。 |
 | 複数AIによる評価 | 実装済み | OpenAI、Anthropic、Gemini、xAI、Groq、またはローカル確認用mockから、1〜3つを選べる。 |
 | 最終評価の集約 | 実装済み | 複数AIのレベルを多数決などのルールでまとめる。多数派がない場合は人間確認フラグを出す。 |
 | 判定理由の表示 | 実装済み | 発話内容、流暢さ、上下レベルとの境界を理由として返す。 |
@@ -74,20 +77,28 @@ flowchart TD
   B --> C["音声の読み込み・前処理"]
   C --> D["ひらがな文字起こし"]
   C --> E["発話区間・ポーズ検出"]
-  D --> F["Judge用データを作成"]
+  D --> F["共通Evidenceを作成（1回）"]
   E --> F
-  G["任意: 質問内容 / Can-do基準 / 話者情報"] --> F
-  F --> H["Judge A"]
-  F --> I["Judge B"]
-  F --> J["Judge C"]
-  H --> K["多数決・合意形成"]
+  F --> G["Fluency事実"]
+  F --> H["Range事実"]
+  F --> I["Accuracy事実"]
+  F --> J["Coherence事実"]
+  G --> K["Judge用データを作成"]
+  H --> K
   I --> K
   J --> K
-  L["過去の人による修正例"] --> M["補正判断"]
-  K --> M
-  M --> N["最終レベル・達成度・理由・人間確認フラグ"]
-  N --> O["任意: 人がレベルを修正"]
-  O --> L
+  L["任意: 質問内容 / Can-do基準 / 話者情報"] --> K
+  K --> M["Judge A"]
+  K --> N["Judge B"]
+  K --> O["Judge C"]
+  M --> P["多数決・合意形成"]
+  N --> P
+  O --> P
+  Q["過去の人による修正例"] --> R["補正判断"]
+  P --> R
+  R --> S["最終レベル・達成度・理由・人間確認フラグ"]
+  S --> T["任意: 人がレベルを修正"]
+  T --> Q
 ```
 
 ### 1. 入力
@@ -124,12 +135,26 @@ APIキーはリクエスト本文では受け取らず、ローカルの`.env`�
 
 文字起こしは、読みやすい日本語へ書き換えません。言い間違い、発音、止まり方を評価材料として残すためです。
 
+### 3.1 共通Evidenceと4つの客観モジュール
+
+ConsoleとHTTP APIは、まず共通Evidence（文字起こし、発話区間、ポーズ、モーラ時刻、Sudachiトークン）を**1回だけ**作ります。既定では、その同じEvidenceから次の4モジュールを実行します。4モジュールは互いの出力に依存せず、どれもCEFRレベルや誤りの判定はしません。
+
+| モジュール | 主な客観データ | 実装上の入力 |
+| --- | --- | --- |
+| Fluency | 発話率、速度、ポーズ、モーラ、ひらがな文字起こし | 音声からの事実抽出 |
+| Range | 語彙数、TTR、JLPT分布、未知語、同音異義語候補 | 共有Sudachiトークン |
+| Accuracy | モーラ時刻、形態素観測、任意の参照文との差分 | 共有Evidence |
+| Coherence | 接続表現、候補単位、反復、ポーズ観測 | 共有Evidence |
+
+個別のモジュールだけを使う呼び出し元は、APIの `selected_modules` で明示的に部分集合を指定できます。指定しない通常実行では、実装済み4モジュールすべての客観データをJudgeに渡します。
+
 ### 4. AIへ渡す評価データを作る
 
 Systemは、次の情報を1つにまとめ、選択したすべてのJudgeへ同じ条件で渡します。
 
 - ひらがな文字起こし
 - 発話率、速度、ポーズなどの流暢性指標
+- Range、Accuracy、Coherenceの客観データ
 - 質問・ロールプレイの内容（指定されている場合）
 - JF Can-do基準（指定されている場合）
 - 必要最小限の話者情報（指定されている場合）
@@ -178,14 +203,14 @@ Systemは、次の情報を1つにまとめ、選択したすべてのJudgeへ�
 | `task_rating` | 質問・課題をどの程度達成できたか |
 | `confidence` | 判定への自信度 |
 | `summary` / `reasons` | なぜその判定になったか |
-| `objective_data` | ひらがな文字起こしと流暢性指標 |
+| `objective_data` | 4モジュールの客観データ（文字起こし、流暢性、Range、Accuracy、Coherence） |
 | `judge_results` | 各AIが個別に出した評価 |
 | `judge_failures` | 接続や応答に失敗したAI |
 | `needs_human_review` | 人による確認を推奨するか |
 
 ### 9. 人が結果を確認・修正する
 
-コンソールではCEFR補正を行いません。現段階では Fluency・Range を含む客観データの精度を確認するため、コンソールは客観データとAI Judgeの参考推定を表示します。
+コンソールではCEFR補正を行いません。現段階では Fluency・Range・Accuracy・Coherence の客観データの精度を確認するため、コンソールは客観データとAI Judgeの参考推定を表示します。
 
 人が正しいCEFRレベルを修正する必要がある場合は、Streamlitのチューニング画面を使います。AIの結果と異なる場合は、修正前レベル、修正後レベル、客観データを `tuning_profiles/base.json` などへ保存し、次回以降の評価材料にします。現在画面から直接修正できるのはCEFRレベルであり、AIへの指示文や自由な採点ルールを画面から直接編集する機能ではありません。
 
@@ -363,7 +388,7 @@ JGRADE_JUDGE_PROVIDERS=anthropic:claude-sonnet-4-6,openai:gpt-5.4-mini,gemini:ge
 
 Judge設定の後に、ファイル選択ダイアログ、パス入力、または `audio/` 内のサンプル音声から音声を選べます。出口はコンソール末尾の `=== 最終結果 ===` です。ここに `CEFRレベル`、`タスク達成度`、`信頼度`、`人間確認`、判定理由、協議理由、ひらがなTranscript量、流暢性指標、3 Judge要約、補正材料が表示されます。
 
-現行コンソールでは、最終結果の後に正しいCEFRレベルを選ばせる画面は表示しません。まず Fluency・Range を含む客観データの精度を高める段階であり、教師によるCEFR補正はチューニング画面など後続のフローで扱います。
+現行コンソールでは、最終結果の後に正しいCEFRレベルを選ばせる画面は表示しません。まず Fluency・Range・Accuracy・Coherence を含む客観データの精度を高める段階であり、教師によるCEFR補正はチューニング画面など後続のフローで扱います。
 
 協力者に送る詳しい手順と報告テンプレートは `docs/collaborator_testing.md` にあります。
 
@@ -457,7 +482,7 @@ uv run python -m unittest discover -s tests
 
 HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまたは `audio_url` を受け取り、`final_cefr_level`、`summary`、`reasons`、`objective_data`、`judge_results`、`needs_human_review` を返します。現在のローカルAPIは1リクエスト内で処理を完了して返すMVPです。将来の外部System統合では、同じレスポンス形を保ったまま非同期ジョブ化する想定です。
 
-`objective_data` には、Fluency のひらがな文字起こし・タイミング指標に加え、非LLMの語彙Range根拠 `range_data` が入ります。Range は SudachiPy の固定分割モードAと同梱JLPT語彙スナップショットを使って、トークン、TTR、JLPT分布、未知語、同音異義語候補を記録します。JLPT分布だけで最終CEFRを決定するものではありません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
+`objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data` が入ります。通常のConsole／HTTP API実行はこの4モジュールすべてを既定で使います。RangeはSudachiPyの固定分割モードAと同梱JLPT語彙スナップショットを使い、トークン、TTR、JLPT分布、未知語、同音異義語候補を記録します。AccuracyとCoherenceも含め、各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
 
 自分で用意した複数音声をmanifestで試す場合は、`examples/jgrade_audio_manifest.json` と同じ形式で、候補者・試験レベル・ロールプレイごとの `audio_path`、タスク、JFS can-do基準、期待される情報を指定できます。`extract-objective` はこのリポジトリの `fluency.py` を使い、ひらがな文字起こし、発話率、ポーズ、モーラ速度、発話区間を出力します。`judge-mode mock` はAPIキーなしの疎通確認用で、正式なJFS判定ではありません。
 

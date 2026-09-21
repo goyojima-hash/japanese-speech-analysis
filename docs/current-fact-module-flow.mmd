@@ -1,0 +1,49 @@
+flowchart TB
+    User([利用者])
+
+    subgraph Entry[入口]
+        Terminal[interactive.py<br/>対話ターミナル]
+        API[api_service.py<br/>API]
+    end
+
+    subgraph Shared[1. 共通 Evidence 層 - 1回だけ]
+        Evidence[evidence/pipeline.py<br/>EvidencePipeline]
+        Audio[audio_pipeline.py<br/>FluencySpeechEvidenceExtractor]
+        Bundle[(EvidenceBundle v1<br/>文字起こし・VAD・ポーズ・モーラ・Sudachiトークン)]
+        Evidence --> Audio --> Bundle
+    end
+
+    subgraph Facts[2. 実装済みの事実モジュール - 相互に独立]
+        Fluency[Fluency モジュール<br/>共有の発話・時刻事実]
+        Range[range.py<br/>RangeExtractor]
+        Accuracy[accuracy.py<br/>AccuracyModule]
+        Coherence[coherence.py<br/>CoherenceModule]
+    end
+
+    Runner[fact_modules.py<br/>run_fact_modules]
+    Packets[(FactModuleRun<br/>fluency / range / accuracy / coherence の客観データ)]
+
+    subgraph Evaluation[3. 評価層 - ここだけが評価]
+        Judge[prompts.py + live_judges.py<br/>AI Judge]
+        Delib[deliberation.py<br/>CEFR 協議]
+    end
+
+    Output([表示 / API応答 / 履歴保存])
+
+    User --> Terminal
+    User --> API
+    Terminal --> Evidence
+    API --> Evidence
+    Bundle --> Fluency
+    Bundle --> Runner
+    Runner --> Range
+    Runner --> Accuracy
+    Runner --> Coherence
+    Fluency --> Packets
+    Range --> Packets
+    Accuracy --> Packets
+    Coherence --> Packets
+    Packets --> Judge --> Delib --> Output
+
+    Terminal -. "既定: 実装済み全モジュール" .-> Runner
+    API -. "既定: 実装済み全モジュール" .-> Runner

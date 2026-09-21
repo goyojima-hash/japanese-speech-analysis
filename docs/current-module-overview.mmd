@@ -1,0 +1,60 @@
+flowchart TB
+    User([利用者]) --> Console["jgrade_eval/interactive.py<br/>run_interactive()"]
+    Console --> Common
+
+    subgraph Common["共通Evidence層 — 最初に1回だけ実行"]
+        direction LR
+        Pipeline["evidence/pipeline.py<br/>EvidencePipeline"]
+        FluencyInput["audio_pipeline.py<br/>FluencyExtractor"]
+        Tokenizer["evidence/linguistic.py<br/>SudachiTokenizer"]
+        Bundle["evidence/models.py<br/>EvidenceBundle v1"]
+        Pipeline --> FluencyInput
+        FluencyInput --> Tokenizer
+        Tokenizer --> Bundle
+    end
+
+    Common --> Fluency
+    Common --> Range
+    Common --> Accuracy
+    Common -. "将来追加" .-> Interaction
+    Common -. "将来追加" .-> Coherence
+
+    subgraph Fluency["Fluencyモジュール（実装済み）"]
+        F["事実: 発話率・ポーズ<br/>モーラ/秒"]
+    end
+    subgraph Range["Rangeモジュール（実装済み）"]
+        R["range.py<br/>事実: 語彙統計・JLPT照合"]
+    end
+    subgraph Accuracy["Accuracyモジュール（実装済み）"]
+        A["accuracy.py<br/>事実: 時刻・形態素観測"]
+    end
+    subgraph Interaction["Interactionモジュール（未実装）"]
+        I["将来: 応答ラグ・ターン交替"]
+    end
+    subgraph Coherence["Coherenceモジュール（未実装）"]
+        C["将来: 接続表現・文のつながり"]
+    end
+
+    Fluency --> Facts
+    Range --> Facts
+    Accuracy --> Facts
+    Interaction -.-> Facts
+    Coherence -.-> Facts
+    Facts["客観的な事実パケット<br/>採点・正誤・CEFRなし"] --> Judge
+
+    subgraph Evaluation["後段の評価層 — ここだけが評価する"]
+        Judge["prompts.py<br/>AI Judge"] --> Deliberation["deliberation.py<br/>CEFR協議"]
+    end
+
+    Deliberation --> Result([CEFR推定・人間確認要否])
+
+    classDef shared fill:#daf7e8,stroke:#23844a,color:#122b1b,stroke-width:2px;
+    classDef implemented fill:#e9f3ff,stroke:#2563a9,color:#102a43,stroke-width:2px;
+    classDef planned fill:#f1f1f1,stroke:#777,color:#444,stroke-width:2px,stroke-dasharray: 5 5;
+    classDef facts fill:#fff7d6,stroke:#a16207,color:#422006,stroke-width:2px;
+    classDef evaluation fill:#f1e8ff,stroke:#7c3aed,color:#2e1065,stroke-width:2px;
+    class Pipeline,FluencyInput,Tokenizer,Bundle shared;
+    class F,R,A implemented;
+    class I,C planned;
+    class Facts facts;
+    class Judge,Deliberation evaluation;

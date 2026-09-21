@@ -133,7 +133,6 @@ Content-Type: application/json
 | `fluency_metrics.max_pause_sec` | 最長ポーズ秒数。 |
 | `fluency_metrics.mora_count` | 検出モーラ数。 |
 | `fluency_metrics.mora_per_sec` | 1秒あたりのモーラ数。 |
-| `fluency_metrics.fluency_grade` | 既存の粗い流暢性グレード。 |
 
 ひらがなTranscriptは、漢字変換、語句補完、自然な日本語への修正をしない。判定は、あくまで音声から出た客観データをベースに行う。
 
@@ -251,8 +250,7 @@ GET /api/v1/speech-level-evaluations/eval_01J2X3
         "pause_count": 8,
         "max_pause_sec": 1.6,
         "mora_count": 183,
-        "mora_per_sec": 3.81,
-        "fluency_grade": "B"
+        "mora_per_sec": 3.81
       }
     },
     "consensus": {

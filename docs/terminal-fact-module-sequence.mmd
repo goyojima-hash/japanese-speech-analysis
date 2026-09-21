@@ -1,0 +1,48 @@
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Console as interactive.py<br/>対話ターミナル
+
+    box rgb(218, 247, 232) 共通Evidence層（1回だけ）
+    participant Evidence as evidence/pipeline.py<br/>EvidencePipeline
+    participant Fluency as audio_pipeline.py<br/>FluencyExtractor
+    end
+
+    box rgb(221, 235, 255) 共通モジュール実行層
+    participant Runner as fact_modules.py<br/>run_fact_modules()
+    end
+
+    box rgb(232, 245, 233) 事実モジュール（相互に独立）
+    participant Range as range.py<br/>RangeExtractor
+    participant Accuracy as accuracy.py<br/>AccuracyModule
+    participant Coherence as coherence.py<br/>CoherenceModule
+    end
+
+    box rgb(220, 236, 255) 評価層（ここだけが評価）
+    participant Judge as AI Judge
+    participant Delib as deliberation.py<br/>CEFR協議
+    end
+
+    User->>Console: 音声を選択
+    Console->>Evidence: build(audio_path)
+    Evidence->>Fluency: 音声を解析
+    Fluency-->>Evidence: 文字起こし・VAD・ポーズ・モーラ時刻
+    Evidence->>Evidence: Sudachiトークン化（1回）
+    Evidence-->>Console: EvidenceBundle v1
+    Console->>Console: 共通Evidence層を表示
+
+    Console->>Runner: run_fact_modules(evidence,<br/>Range + Accuracy + Coherence)
+    Note over Runner,Coherence: 3モジュールは同じEvidenceを読み、互いを呼ばない
+    Runner->>Range: LinguisticEvidence
+    Runner->>Accuracy: EvidenceBundle
+    Runner->>Coherence: EvidenceBundle
+    Range-->>Runner: range_data
+    Accuracy-->>Runner: accuracy_data
+    Coherence-->>Runner: coherence_data
+    Runner-->>Console: FactModuleRun（3パケット）
+    Console->>Console: Range / Accuracy / Coherenceを表示
+
+    Console->>Judge: 基礎事実 + 3パケット
+    Judge-->>Delib: CEFR推定
+    Delib-->>Console: 最終推定・人間確認要否
+    Console-->>User: 表示・履歴保存

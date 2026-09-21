@@ -1,0 +1,66 @@
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+
+    box rgb(255, 243, 205) 入り口（同じ実行経路を利用）
+    participant Console as interactive.py<br/>対話ターミナル
+    participant API as api_service.py<br/>API
+    end
+
+    box rgb(218, 247, 232) 共通Evidence層（1回だけ）
+    participant Evidence as evidence/<br/>pipeline.py・speech.py・linguistic.py
+    participant Fluency as audio_pipeline.py<br/>FluencyExtractor
+    end
+
+    box rgb(221, 235, 255) 共通モジュール実行層（1箇所だけ）
+    participant Runner as fact_modules.py<br/>run_fact_modules()
+    end
+
+    box rgb(232, 245, 233) Rangeモジュール（実装済み）
+    participant Range as range.py<br/>RangeExtractor
+    end
+
+    box rgb(232, 245, 233) Accuracyモジュール（実装済み）
+    participant Accuracy as accuracy.py<br/>AccuracyModule
+    end
+
+    box rgb(232, 245, 233) Coherenceモジュール（実装済み）
+    participant Coherence as coherence.py<br/>CoherenceModule
+    end
+
+    box rgb(220, 236, 255) 評価層（ここだけが評価）
+    participant Judge as prompts.py・live_judges.py<br/>AI Judge
+    participant Delib as deliberation.py<br/>CEFR協議
+    end
+
+    Note over Evidence,Coherence: Evidence と各モジュールは採点しない。客観事実だけを出力する。
+
+    alt ターミナル実行
+        User->>Console: 音声を選択
+        Console->>Evidence: build(audio_path)
+        Evidence->>Fluency: 音声を解析
+        Fluency-->>Evidence: 文字起こし・VAD・ポーズ・モーラ時刻
+        Evidence->>Evidence: Sudachiトークン化（1回）
+        Evidence-->>Console: EvidenceBundle v1
+        Console->>Runner: run_fact_modules(evidence,<br/>既定: 実装済み全モジュール)
+        Runner->>Range: 同じ LinguisticEvidence
+        Runner->>Accuracy: 同じ EvidenceBundle
+        Runner->>Coherence: 同じ EvidenceBundle
+        Range-->>Runner: range_data
+        Accuracy-->>Runner: accuracy_data
+        Coherence-->>Runner: coherence_data
+        Runner-->>Console: FactModuleRun（3パケット）
+        Console->>Console: 共通Evidence / 3モジュールを表示
+        Console->>Judge: 全選択パケット + 基礎事実
+    else API 実行
+        User->>API: POST /speech-level-evaluations
+        API->>Evidence: build(audio_path)
+        Evidence-->>API: EvidenceBundle v1
+        API->>Runner: run_fact_modules(evidence,<br/>既定: 実装済み全モジュール)
+        Runner-->>API: FactModuleRun（選択パケットのみ）
+        API->>Judge: 選択パケット + 基礎事実
+    end
+    Judge-->>Delib: JudgeごとのCEFR推定
+    Delib-->>Console: 協議結果・人間確認要否
+    Delib-->>API: 協議結果・人間確認要否
+    Note over Runner,Coherence: Interaction は未実装。将来ここへ1回だけ追加する。

@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 import json
-from importlib.metadata import version
 from pathlib import Path
-from typing import Iterable, Mapping, Protocol
+from typing import Iterable, Mapping
 from unicodedata import normalize
+
+from .evidence.linguistic import SudachiTokenizer, Tokenizer
+from .evidence.models import LinguisticEvidence, TokenEvidence
 
 
 JLPT_LEVELS = ("N5", "N4", "N3", "N2", "N1")
@@ -15,49 +17,16 @@ _DATA_DIRECTORY = Path(__file__).with_name("data")
 _DEFAULT_VOCABULARY_PATH = _DATA_DIRECTORY / "jlpt_vocab_all.json"
 
 
-@dataclass(frozen=True)
-class TokenizedWord:
-    surface: str
-    dictionary_form: str
-    reading_hiragana: str
-    part_of_speech: tuple[str, ...]
+class TokenizedWord(TokenEvidence):
+    """Backward-compatible Range token record.
+
+    Shared tokenisation now returns ``TokenEvidence``; this subclass retains the
+    former convenience property for callers that imported it from this module.
+    """
 
     @property
     def is_lexical(self) -> bool:
-        return not self.part_of_speech or self.part_of_speech[0] not in _FUNCTION_POS
-
-
-class Tokenizer(Protocol):
-    version: str
-    split_mode: str
-
-    def tokenize(self, text: str) -> list[TokenizedWord]: ...
-
-
-class SudachiTokenizer:
-    """SudachiPy adapter with a fixed, fine-grained split mode."""
-
-    split_mode = "A"
-
-    def __init__(self) -> None:
-        from sudachipy import Dictionary, SplitMode
-
-        self._tokenizer = Dictionary(dict="core").create()
-        self._split_mode = SplitMode.A
-        self.version = f"SudachiPy {version('SudachiPy')}; SudachiDict-core {version('SudachiDict-core')}"
-
-    def tokenize(self, text: str) -> list[TokenizedWord]:
-        if not text.strip():
-            return []
-        return [
-            TokenizedWord(
-                surface=morpheme.surface(),
-                dictionary_form=morpheme.dictionary_form(),
-                reading_hiragana=_normalise_hiragana(morpheme.reading_form()),
-                part_of_speech=tuple(morpheme.part_of_speech()),
-            )
-            for morpheme in self._tokenizer.tokenize(text, self._split_mode)
-        ]
+        return _is_lexical(self)
 
 
 @dataclass(frozen=True)
@@ -150,6 +119,27 @@ class RangeExtractor:
 
     def analyze(self, raw_transcript_hiragana: str) -> dict[str, object]:
         tokens = self._tokenizer.tokenize(raw_transcript_hiragana)
+        return self._analyze_tokens(
+            tokens,
+            tokenizer_version=getattr(self._tokenizer, "version", "unknown"),
+            split_mode=getattr(self._tokenizer, "split_mode", "unknown"),
+        )
+
+    def analyze_linguistic_evidence(self, evidence: LinguisticEvidence) -> dict[str, object]:
+        """Calculate Range facts from a shared, already-tokenised evidence bundle."""
+        return self._analyze_tokens(
+            evidence.tokens,
+            tokenizer_version=evidence.tokenizer_version,
+            split_mode=evidence.split_mode,
+        )
+
+    def _analyze_tokens(
+        self,
+        tokens: Iterable[TokenEvidence],
+        *,
+        tokenizer_version: str,
+        split_mode: str,
+    ) -> dict[str, object]:
         token_records = [self._analyse_token(token) for token in tokens]
         lexical_records = [record for record in token_records if record["is_lexical"]]
         known_records = [record for record in lexical_records if record["selected_jlpt_level"]]
@@ -173,22 +163,27 @@ class RangeExtractor:
             "jlpt_distribution": _distribution(known_records),
             "ambiguity_count": sum(1 for record in lexical_records if len(record["jlpt_candidates"]) > 1),
             "dictionary_version": self._vocabulary.version,
-            "tokenizer_version": getattr(self._tokenizer, "version", "unknown"),
-            "split_mode": getattr(self._tokenizer, "split_mode", "unknown"),
+            "tokenizer_version": tokenizer_version,
+            "split_mode": split_mode,
         }
 
-    def _analyse_token(self, token: TokenizedWord) -> dict[str, object]:
-        candidates = self._vocabulary.lookup(token.reading_hiragana) if token.is_lexical else ()
+    def _analyse_token(self, token: TokenEvidence) -> dict[str, object]:
+        is_lexical = _is_lexical(token)
+        candidates = self._vocabulary.lookup(token.reading_hiragana) if is_lexical else ()
         selected = candidates[0] if candidates else None
         return {
             "surface": token.surface,
             "dictionary_form": token.dictionary_form,
             "reading_hiragana": _normalise_hiragana(token.reading_hiragana),
             "part_of_speech": list(token.part_of_speech),
-            "is_lexical": token.is_lexical,
+            "is_lexical": is_lexical,
             "jlpt_candidates": [candidate.to_dict() for candidate in candidates],
             "selected_jlpt_level": selected.level_name if selected else None,
         }
+
+
+def _is_lexical(token: TokenEvidence) -> bool:
+    return not token.part_of_speech or token.part_of_speech[0] not in _FUNCTION_POS
 
 
 def _group_candidates(entries: Iterable[Mapping[str, object]]) -> dict[str, tuple[JLPTCandidate, ...]]:

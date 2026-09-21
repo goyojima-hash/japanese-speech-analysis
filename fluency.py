@@ -117,15 +117,7 @@ def get_mora_timings(all_logits, blank_id, vocab):
     return mora_timings
 
 
-# ── 評価・可視化 ──────────────────────────────────────────────────
-
-def grade(speech_pct, speed, max_pause):
-    """流暢度グレード（S/A/B/C/D）"""
-    if   speech_pct >= 80 and speed >= 7.0 and max_pause < 1.0: return "S"
-    elif speech_pct >= 70 and speed >= 6.0 and max_pause < 1.5: return "A"
-    elif speech_pct >= 60 and speed >= 5.0 and max_pause < 2.0: return "B"
-    elif speech_pct >= 50 and speed >= 4.0:                      return "C"
-    else:                                                         return "D"
+# ── 可視化 ───────────────────────────────────────────────────────
 
 def bar(ratio, width=30, fill="█", empty="░"):
     n = round(ratio * width)
@@ -184,9 +176,6 @@ def main():
         speed       = len(mora_timings) / duration
         max_pause   = max((p["duration"] for p in pauses), default=0)
         avg_pause   = pause_total / len(pauses) if pauses else 0
-        g           = grade(speech_pct, speed, max_pause)
-        speed_label = ("速い" if speed >= 9 else "普通" if speed >= 6
-                       else "ゆっくり" if speed >= 4 else "かなりゆっくり")
 
         hiragana_clean = "".join(hiragana.split())
         romaji_clean   = to_romaji(hiragana_clean)
@@ -206,17 +195,15 @@ def main():
         print(f"\n  【ローマ字】")
         print(f"  {romaji_clean}")
 
-        # ── 総合評価 ────────────────────────────────────────────
-        grade_desc = {"S":"ネイティブに近い流暢さ","A":"かなり流暢","B":"概ね流暢",
-                      "C":"やや不流暢","D":"かなり不流暢"}
+        # ── 客観的事実 ──────────────────────────────────────────
         print(f"\n  {'─'*W}")
-        print(f"  総合評価 : {g}  （{grade_desc[g]}）")
+        print("  流暢さの客観的事実（レベル評価は後段のJudgeが実施）")
         print(f"  {'─'*W}")
         speech_bar = bar(speech_sec / duration)
         print(f"  発話時間   {speech_sec:4.0f}秒  {speech_bar}  {speech_pct:.0f}%")
         pause_bar  = bar(pause_total / duration, fill="░", empty=" ")
         print(f"  無音・間   {pause_total:4.0f}秒  {pause_bar}  {100-speech_pct:.0f}%")
-        print(f"  発話速度       {speed:.1f} モーラ/秒  →  {speed_label}")
+        print(f"  発話速度       {speed:.1f} モーラ/秒")
         print(f"  認識音節数     {len(mora_timings)} モーラ")
         print(f"  詰まり回数     {len(pauses)} 回  （平均 {avg_pause:.1f}秒 / 最長 {max_pause:.1f}秒）")
 

@@ -31,11 +31,17 @@ class FluencyExtractor:
         except Exception as exc:
             raise ObjectiveExtractionError(_format_model_load_error(exc)) from exc
 
+    @property
+    def provenance(self) -> dict[str, str]:
+        return {
+            "stt_model": "vumichien/wav2vec2-large-xlsr-japanese-hiragana",
+            "vad_model": "silero-vad",
+        }
+
     def extract(self, audio_path: Path) -> dict[str, Any]:
         from fluency import (
             detect_speech_and_pauses,
             get_mora_timings,
-            grade,
             to_romaji,
             transcribe,
         )
@@ -77,7 +83,6 @@ class FluencyExtractor:
                 "max_pause_sec": round(max_pause, 2),
                 "mora_count": len(mora_timings),
                 "mora_per_sec": round(mora_per_sec, 2),
-                "fluency_grade": grade(speech_ratio_pct, mora_per_sec, max_pause),
             },
             "top_pauses": [
                 {
@@ -94,6 +99,22 @@ class FluencyExtractor:
                     "duration": round(segment["end"] - segment["start"], 2),
                 }
                 for segment in speech_ts
+            ],
+            "pause_segments": [
+                {
+                    "start": round(pause["start"], 2),
+                    "end": round(pause["end"], 2),
+                    "duration": round(pause["duration"], 2),
+                }
+                for pause in pauses
+            ],
+            "mora_timings": [
+                {
+                    "mora": str(timing["mora"]),
+                    "start": round(float(timing["start"]), 4),
+                    "end": round(float(timing["end"]), 4),
+                }
+                for timing in mora_timings
             ],
             "extraction_time_sec": round(time.perf_counter() - start, 2),
             "stt_model": "vumichien/wav2vec2-large-xlsr-japanese-hiragana",

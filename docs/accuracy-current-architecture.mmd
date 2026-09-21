@@ -1,0 +1,51 @@
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Console as interactive.py<br/>対話コンソール
+
+    box rgb(218, 247, 232) 共通Evidence層（最初に一度だけ実行）
+    participant Evidence as evidence/<br/>pipeline.py・speech.py・linguistic.py・models.py
+    end
+
+    box rgb(218, 247, 232) Fluencyモジュール（実装済み）
+    participant Fluency as audio_pipeline.py<br/>FluencyExtractor
+    end
+
+    box rgb(218, 247, 232) Rangeモジュール（実装済み）
+    participant Range as range.py<br/>RangeExtractor
+    end
+
+    box rgb(218, 247, 232) Accuracyモジュール（実装済み）
+    participant Accuracy as accuracy.py<br/>AccuracyModule
+    end
+
+    box rgb(220, 236, 255) 評価層（ここだけが評価する）
+    participant Judge as prompts.py<br/>AI Judge
+    participant Delib as deliberation.py<br/>CEFR協議
+    end
+
+    Note over Console,Delib: 共通層と3モジュールは客観事実のみを出力する
+
+    User->>Console: 音声を選択
+    Console->>Evidence: build(audio_path)
+    Evidence->>Fluency: 音声を解析
+    Fluency-->>Evidence: 文字起こし・VAD・ポーズ・モーラ時刻
+    Evidence->>Evidence: 共有Sudachiトークン化
+    Evidence-->>Console: EvidenceBundle v1<br/>共有Evidence
+    Console->>Console: 共通Evidence層の事実を表示
+
+    Note over Console,Accuracy: 以下の3モジュールは同じ共有Evidenceを読む。相互依存しない。
+    Console->>Console: Fluencyの事実を表示
+    Console->>Range: 共有トークンを渡す
+    Range-->>Console: Range Fact<br/>語彙統計・JLPT照合
+    Console->>Accuracy: EvidenceBundleを渡す
+    Accuracy-->>Console: Accuracy Fact<br/>時刻・形態素観測
+    Console->>Console: Range / Accuracyの事実を表示
+
+    Console->>Judge: 3モジュールの事実データ
+    Judge-->>Console: CEFR推定・根拠
+    Console->>Delib: Judge結果 + 客観事実
+    Delib-->>Console: 協議結果・人間確認要否
+    Console-->>User: 結果を表示・履歴を保存
+
+    Note over Range,Accuracy: 次の軸: Coherence / Interaction（未実装）

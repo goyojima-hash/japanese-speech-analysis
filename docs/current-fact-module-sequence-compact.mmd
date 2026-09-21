@@ -1,0 +1,38 @@
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Entry as interactive.py / api_service.py<br/>入口
+    participant Evidence as evidence/pipeline.py<br/>共通Evidence層
+    box rgb(226, 247, 232) 実装済み事実モジュール（相互に独立）
+        participant Fluency as audio_pipeline.py<br/>Fluency
+        participant Range as range.py<br/>Range
+        participant Accuracy as accuracy.py<br/>Accuracy
+        participant Coherence as coherence.py<br/>Coherence
+    end
+    participant Runner as fact_modules.py<br/>共通Runner
+    participant Evaluation as AI Judge + deliberation.py<br/>評価層
+
+    User->>Entry: 音声を送信 / 選択
+    Entry->>Evidence: build(audio_path)
+    Evidence->>Fluency: 音声事実を抽出
+    Fluency-->>Evidence: 文字起こし・VAD・ポーズ・モーラ
+    Evidence->>Evidence: Sudachiトークン化（1回）
+    Evidence-->>Entry: EvidenceBundle v1
+    Entry->>Runner: run_fact_modules(evidence)<br/>既定: 実装済み全モジュール
+
+    par Range
+        Runner->>Range: 共有LinguisticEvidence
+        Range-->>Runner: range_data
+    and Accuracy
+        Runner->>Accuracy: 共有EvidenceBundle
+        Accuracy-->>Runner: accuracy_data
+    and Coherence
+        Runner->>Coherence: 共有EvidenceBundle
+        Coherence-->>Runner: coherence_data
+    end
+
+    Runner-->>Entry: FactModuleRun（3パケット）
+    Note over Entry,Runner: Fluencyの客観データは共通Evidenceに同梱
+    Entry->>Evaluation: Fluency + Range + Accuracy + Coherence<br/>すべて客観データ
+    Evaluation-->>Entry: CEFR推定・協議結果
+    Entry-->>User: 表示 / API応答 / 履歴保存

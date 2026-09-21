@@ -49,6 +49,7 @@ async def create_speech_level_evaluation(request: Request) -> JSONResponse:
             provider_specs=provider_specs,
             timeout_sec=float(payload.get("timeout_sec", 60.0)),
             include_objective_data=_parse_bool(payload.get("include_objective_data"), default=True),
+            selected_modules=_parse_optional_module_list(payload.get("fact_modules")),
         )
         EVALUATIONS[result["id"]] = result
         return JSONResponse({"data": result}, status_code=201)
@@ -93,6 +94,7 @@ async def _read_request_payload(request: Request, temp_dir: Path) -> tuple[dict[
             "judge_providers": _optional_form_value(form.get("judge_providers")),
             "timeout_sec": float(form.get("timeout_sec") or 60.0),
             "include_objective_data": _parse_bool(form.get("include_objective_data"), default=True),
+            "fact_modules": _parse_optional_module_list(form.get("fact_modules")),
             "env_file": _optional_form_value(form.get("env_file")),
         }
         return payload, audio_path
@@ -151,6 +153,15 @@ def _parse_list_field(value: Any) -> list[str]:
             raise ValueError("jfs_can_do_criteria must be a JSON array.")
         return [str(item) for item in parsed]
     return [part.strip() for part in text.splitlines() if part.strip()]
+
+
+def _parse_optional_module_list(value: Any) -> list[str] | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    parsed = _parse_list_field(value)
+    return parsed or None
 
 
 def _parse_json_object_field(value: Any) -> dict[str, Any]:
