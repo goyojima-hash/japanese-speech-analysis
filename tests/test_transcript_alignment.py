@@ -35,8 +35,7 @@ class TranscriptAlignmentTests(unittest.TestCase):
             "alignment_status": "complete",
         })
         self.assertEqual(alignment.candidate_for_interval(2.0, 4.0)["transcript_text"], "うえお")
-        self.assertEqual(objective_data_from_evidence(evidence, audio_path="sample.mp3")
-                         ["transcript_alignment"]["status"], "complete")
+        self.assertNotIn("transcript_alignment", objective_data_from_evidence(evidence, audio_path="sample.mp3"))
 
     def test_trailing_unaligned_text_is_partial_never_assumed_timed(self) -> None:
         alignment = build_transcript_alignment(speech("あいう", (
