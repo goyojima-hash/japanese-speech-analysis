@@ -19,6 +19,10 @@ from .live_judges import (
 from .mock_judges import judge_auto_cefr_with_mock_panel
 from .models import AutoLevelJudgeResult, Rating
 from .range import RangeExtractor
+from .task_assessment import assess_shadow_task
+from .task_context import TaskContext
+from .task_observation import observe_task_with_provider
+from .task_rubrics import TaskAssessment, TaskRubric
 from .tuning_profile import TuningProfile, compose_auto_cefr_system_prompt
 
 
@@ -47,6 +51,9 @@ def evaluate_speech_level(
     evidence_pipeline: EvidencePipeline | None = None,
     selected_modules: Iterable[str] | None = None,
     interaction_context: dict[str, Any] | None = None,
+    task_context: dict[str, Any] | None = None,
+    assessment_mode: str = "off",
+    task_rubrics: dict[str, TaskRubric] | None = None,
 ) -> dict[str, Any]:
     """Evaluate one speech file and return an API-shaped completed result."""
 
@@ -54,6 +61,8 @@ def evaluate_speech_level(
         raise ValueError("language must be 'ja'.")
     if judge_mode not in {"mock", "live"}:
         raise ValueError("judge_mode must be 'mock' or 'live'.")
+    if assessment_mode not in {"off", "shadow"}:
+        raise ValueError("assessment_mode must be 'off' or 'shadow'.")
     if judge_mode == "live" and not provider_specs:
         raise ValueError("live judge_mode requires 1 to 3 judge providers.")
 
@@ -158,6 +167,26 @@ def evaluate_speech_level(
     }
     if include_objective_data:
         payload["objective_data"] = _public_objective_data(objective_data)
+    if assessment_mode == "shadow":
+        context = TaskContext.from_inputs(
+            roleplay_task=roleplay_task,
+            interaction_context=interaction_context,
+            task_context=task_context,
+            transcript=evidence.speech.raw_transcript_hiragana,
+            duration_sec=evidence.speech.duration_sec,
+        )
+        if judge_mode == "mock":
+            shadow = TaskAssessment(status="mock_unavailable", reason="mock Judge is not a speech-act model")
+        else:
+            spec = (provider_specs or [])[0]
+            shadow = assess_shadow_task(
+                context,
+                task_rubrics or {},
+                observe=lambda prompt, answer: observe_task_with_provider(
+                    prompt, answer, spec, timeout_sec=min(timeout_sec, 20.0),
+                ),
+            )
+        payload["task_assessment_shadow"] = shadow.to_dict()
     return payload
 
 

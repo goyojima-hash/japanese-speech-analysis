@@ -39,4 +39,4 @@ def assess_shadow_task(
             return TaskAssessment(status="invalid_observation", reason="observation references another answer")
         return apply_rubric(rubric, observation, prompt)
     except Exception as exc:
-        return TaskAssessment(status="observation_failed", reason=f"{type(exc).__name__}: {exc}")
+        return TaskAssessment(status="observation_failed", reason=type(exc).__name__)
