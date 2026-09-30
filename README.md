@@ -430,6 +430,15 @@ uv run python -m jgrade_eval evaluate-audio \
   --judge-providers anthropic:claude-sonnet-4-6,openai:gpt-5.4-mini,gemini:gemini-3.1-pro-preview \
   --output outputs/jgrade_live_report.json
 
+# HTTP APIと同じ評価サービスをターミナルから実行し、旧結果と試験結果を同じJSONに保存
+uv run python -m jgrade_eval evaluate-speech \
+  --audio audio/sample.mp3 \
+  --judge-mode live \
+  --judge-providers openai:your-model-id \
+  --assessment-mode shadow \
+  --task-context-file examples/task_context.json \
+  --output outputs/task_comparison.json
+
 # 対話式: 音声を選ぶ -> 客観データ表示 -> 1〜3 Judge CEFR推定 -> CEFR協議表示
 # 音声はファイル選択ダイアログ、パス入力、またはサンプル音声から選べます
 uv run python -m jgrade_eval interactive --judge-mode mock
@@ -477,10 +486,12 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/speech-level-evaluations \
 uv run python -m unittest discover -s tests
 ```
 
-対話式CLIではCEFRレベルやロールプレイ課題を人間が入力せず、客観データをもとに1〜3つのLLM Judgeが `A1`〜`C2` を推定し、多数決で最終CEFR推定を表示します。標準構成は3 Judgeですが、ローカル検証ではJudge 2/3をスキップできます。プロバイダは重複できません。
+対話式CLIではCEFRレベルを人間が入力せず、任意の設問と客観データをもとに1〜3つのLLM Judgeが `A1`〜`C2` を推定し、多数決で最終CEFR推定を表示します。標準構成は3 Judgeですが、ローカル検証ではJudge 2/3をスキップできます。プロバイダは重複できません。
 対話式CLIでは一部のJudge APIが失敗しても、少なくとも1つのJudgeが成功していれば、その成功分だけでCEFR集約を続行し、失敗したJudgeは警告として表示します。
 
 HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまたは `audio_url` を受け取り、`final_cefr_level`、`summary`、`reasons`、`objective_data`、`judge_results`、`needs_human_review` を返します。現在のローカルAPIは1リクエスト内で処理を完了して返すMVPです。将来の外部System統合では、同じレスポンス形を保ったまま非同期ジョブ化する想定です。
+
+発話行為の観測と項目別基準の変換を試す場合は、APIの `assessment_mode=shadow` またはターミナルの `evaluate-speech --assessment-mode shadow` を明示します。`task_context` の例は `{"prompts":[{"prompt_id":"q1","text":"予定について話してください"}],"whole_recording_answer_prompt_id":"q1"}` です。後者は「録音全体がこの設問の回答」と利用者が確認した場合だけ指定してください。ターミナルで単一設問なら、その文面を従来Judgeの設問にも渡します。確認済み回答なら基準未登録でも観測を返し、`rating` は保留します。JSONには従来の `task_rating` と別に `task_assessment_shadow` が入り、既存のCEFR推定は変えません。複数設問なら回答Transcript区間を確認して `answers` に明示する必要があります。`judge_mode=mock` では本物の発話観測を作らず、疎通確認のみです。詳細は [`docs/task-assessment-shadow-design.ja.md`](docs/task-assessment-shadow-design.ja.md) を参照してください。
 
 `objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data`、Interaction観測 `interaction_data` が入ります。通常のConsole／HTTP API実行はこの5モジュールすべてを既定で使います。Interactionは録音形態、VADポーズ由来の回答候補、設問の有無、対話表現候補、未提供能力を記録します。`interaction_context` に設問集合と確定済みの回答時刻区間を渡すと、それらを明示的な来歴として保存できます。各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
 

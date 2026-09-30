@@ -1,0 +1,9 @@
+{
+  "prompts": [
+    {
+      "prompt_id": "q1",
+      "text": "予定について話してください"
+    }
+  ],
+  "whole_recording_answer_prompt_id": "q1"
+}
