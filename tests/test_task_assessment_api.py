@@ -100,6 +100,44 @@ class TaskAssessmentApiTests(unittest.TestCase):
         self.assertEqual(result["task_assessment_shadow"]["status"], "mock_unavailable")
         self.assertIsNone(result["task_assessment_shadow"]["rating"])
 
+    def test_shadow_keeps_two_confirmed_answers_separate(self) -> None:
+        transcript = "らいしゅうのきんようびでいいですか"
+        task_context = {
+            "prompts": [
+                {"prompt_id": "q1", "text": "最初の確認", "task_type": "date_confirmation", "rubric_id": "date-test"},
+                {"prompt_id": "q2", "text": "次の確認", "task_type": "date_confirmation", "rubric_id": "date-test"},
+            ],
+            "answers": [
+                {"prompt_id": "q1", "start_offset": 0, "end_offset": 8,
+                 "transcript_text": transcript[:8], "confirmed_by": "teacher-1"},
+                {"prompt_id": "q2", "start_offset": 8, "end_offset": len(transcript),
+                 "transcript_text": transcript[8:], "confirmed_by": "teacher-1"},
+            ],
+        }
+        def fake_observe(prompt, answer, spec, *, timeout_sec):
+            return TaskObservation.from_dict({
+                "prompt_id": prompt.prompt_id, "segment_id": answer.segment_id,
+                "act_type": "confirmation_request", "target": "date",
+                "quote": answer.transcript_text,
+                "start_offset": answer.start_offset, "end_offset": answer.end_offset,
+                "features": {}, "judge_id": "O1", "model": "fake",
+            }, answer=answer)
+        with (
+            patch("jgrade_eval.api_service.judge_auto_cefr_with_live_panel_partial",
+                  side_effect=lambda roleplay_input, *args, **kwargs: (
+                      judge_auto_cefr_with_mock_panel(roleplay_input), [])),
+            patch("jgrade_eval.api_service.observe_task_with_provider", side_effect=fake_observe),
+        ):
+            result = evaluate_speech_level(
+                Path("sample.mp3"), extractor=FakeExtractor(), judge_mode="live",
+                provider_specs=[ProviderSpec("openai", "fake-model")],
+                selected_modules=("accuracy",), task_context=task_context,
+                assessment_mode="shadow", task_rubrics={"date-test": _rubric()},
+            )
+        self.assertEqual([item["prompt_id"] for item in result["task_assessments_shadow"]],
+                         ["q1", "q2"])
+        self.assertNotIn("task_assessment_shadow", result)
+
 
 if __name__ == "__main__":
     unittest.main()
