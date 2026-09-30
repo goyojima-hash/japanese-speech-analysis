@@ -230,6 +230,8 @@ def main() -> None:
         except JudgeProviderError as exc:
             parser.exit(2, f"[エラー] LLM Judge呼び出しに失敗しました。\n{exc}\n")
     elif args.command == "evaluate-speech":
+        if args.judge_mode == "live" and not args.judge_providers:
+            parser.error("evaluate-speech --judge-mode live requires --judge-providers")
         load_env_file(args.env_file)
         context = _read_json(args.task_context_file) if args.task_context_file else None
         if context is not None and not isinstance(context, dict):
