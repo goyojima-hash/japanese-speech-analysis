@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from .evidence.alignment import TranscriptAlignment, build_transcript_alignment
 from .evidence.models import EvidenceBundle
 
 
@@ -65,6 +66,7 @@ class InteractionModule:
             interaction_context, prompt_text=prompt_text, duration=evidence.speech.duration_sec,
             pauses=tuple((pause.start, pause.end) for pause in evidence.speech.pause_segments),
             transcript=evidence.speech.raw_transcript_hiragana,
+            alignment=build_transcript_alignment(evidence.speech),
         )
         has_prompt = bool(context["prompts"])
         duration = evidence.speech.duration_sec
@@ -107,6 +109,7 @@ def _normalize_context(
     duration: float,
     pauses: tuple[tuple[float, float], ...],
     transcript: str,
+    alignment: TranscriptAlignment,
 ) -> dict[str, Any]:
     raw = dict(value or {})
     prompts = raw.get("prompts", [])
@@ -166,6 +169,11 @@ def _normalize_context(
                      "boundary_evidence": (["recording_start"] if index == 1 else ["vad_pause>=1.0s"])
                      + (["recording_end"] if index == len(starts) else [])}
                     for index, (start, end) in enumerate(zip(starts, ends), 1) if end > start]
+    for segment in segments:
+        if "transcript_text" not in segment:
+            candidate = alignment.candidate_for_interval(segment["start_sec"], segment["end_sec"])
+            if candidate is not None:
+                segment.update(candidate)
     return {
         "prompts": normalized_prompts, "answer_segments": segments, "recording_mode": mode,
         "mode_source": "user_declared" if "recording_mode" in raw else "single_stream_baseline",
