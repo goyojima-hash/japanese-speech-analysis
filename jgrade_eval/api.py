@@ -51,6 +51,8 @@ async def create_speech_level_evaluation(request: Request) -> JSONResponse:
             include_objective_data=_parse_bool(payload.get("include_objective_data"), default=True),
             selected_modules=_parse_optional_module_list(payload.get("fact_modules")),
             interaction_context=_coerce_json_object(payload.get("interaction_context")),
+            task_context=_coerce_json_object(payload.get("task_context")),
+            assessment_mode=str(payload.get("assessment_mode") or "off"),
         )
         EVALUATIONS[result["id"]] = result
         return JSONResponse({"data": result}, status_code=201)
@@ -98,6 +100,8 @@ async def _read_request_payload(request: Request, temp_dir: Path) -> tuple[dict[
             "fact_modules": _parse_optional_module_list(form.get("fact_modules")),
             "env_file": _optional_form_value(form.get("env_file")),
             "interaction_context": _parse_json_object_field(form.get("interaction_context")),
+            "task_context": _parse_json_object_field(form.get("task_context")),
+            "assessment_mode": str(form.get("assessment_mode") or "off"),
         }
         return payload, audio_path
 
@@ -117,6 +121,8 @@ async def _read_request_payload(request: Request, temp_dir: Path) -> tuple[dict[
         payload.setdefault("speaker_metadata", {})
         payload.setdefault("judge_mode", "mock")
         payload.setdefault("interaction_context", {})
+        payload.setdefault("task_context", {})
+        payload.setdefault("assessment_mode", "off")
         payload["include_objective_data"] = _parse_bool(
             payload.get("include_objective_data"),
             default=True,
