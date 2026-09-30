@@ -100,7 +100,7 @@ class TaskAssessmentTests(unittest.TestCase):
         self.assertEqual(apply_rubric(conflicting, _observation(), _confirmed_context().prompts[0]).status,
                          "conflicted")
 
-    def test_shadow_skips_unconfirmed_and_missing_rubric_without_observing(self) -> None:
+    def test_shadow_observes_confirmed_answer_even_without_rubric(self) -> None:
         calls: list[str] = []
         def observe(_prompt, _answer):
             calls.append("called")
@@ -112,9 +112,11 @@ class TaskAssessmentTests(unittest.TestCase):
         )
         self.assertEqual(assess_shadow_task(unconfirmed, {"date-test": _rubric()}, observe=observe).status,
                          "insufficient_context")
-        self.assertEqual(assess_shadow_task(_confirmed_context(), {}, observe=observe).status,
-                         "rubric_unavailable")
-        self.assertEqual(calls, [])
+        without_rubric = assess_shadow_task(_confirmed_context(), {}, observe=observe)
+        self.assertEqual(without_rubric.status, "rubric_unavailable")
+        self.assertIsNone(without_rubric.rating)
+        self.assertEqual(without_rubric.observation, _observation())
+        self.assertEqual(calls, ["called"])
 
     def test_shadow_observer_failure_does_not_raise(self) -> None:
         def observe(_prompt, _answer):
