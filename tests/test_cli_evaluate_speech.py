@@ -39,6 +39,7 @@ class EvaluateSpeechCliTests(unittest.TestCase):
             self.assertEqual(evaluate.call_args.kwargs["assessment_mode"], "shadow")
             self.assertEqual(evaluate.call_args.kwargs["selected_modules"], ("fluency", "interaction"))
             self.assertEqual(evaluate.call_args.kwargs["task_context"]["prompts"][0]["prompt_id"], "q1")
+            self.assertEqual(evaluate.call_args.kwargs["roleplay_task"], "予定について話してください")
 
     def test_default_mode_remains_off(self) -> None:
         argv = ["jgrade", "evaluate-speech", "--audio", "sample.wav"]
