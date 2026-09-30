@@ -48,6 +48,15 @@ class EvaluateSpeechCliTests(unittest.TestCase):
             main()
         self.assertEqual(evaluate.call_args.kwargs["assessment_mode"], "off")
 
+    def test_live_mode_requires_providers_before_starting_evaluation(self) -> None:
+        argv = ["jgrade", "evaluate-speech", "--audio", "sample.wav", "--judge-mode", "live"]
+        with (patch.object(sys, "argv", argv),
+              patch("jgrade_eval.api_service.evaluate_speech_level") as evaluate):
+            with self.assertRaises(SystemExit) as raised:
+                main()
+        self.assertEqual(raised.exception.code, 2)
+        evaluate.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
