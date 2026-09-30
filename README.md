@@ -495,6 +495,8 @@ HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまた�
 
 `objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data`、Interaction観測 `interaction_data` が入ります。通常のConsole／HTTP API実行はこの5モジュールすべてを既定で使います。Interactionは録音形態、VADポーズ由来の回答候補、設問の有無、対話表現候補、未提供能力を記録します。`interaction_context` に設問集合と確定済みの回答時刻区間を渡すと、それらを明示的な来歴として保存できます。各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
 
+共通Evidenceから、ひらがな文字起こしと既存CTC時刻列の保守的な対応候補 `transcript-alignment.v1` を派生できます。APIで客観データを返す場合は `objective_data` の形を変えず、同階層の `transcript_alignment` に対応状況と来歴を返します。Interactionの回答候補にも未確定の文字範囲候補を付けますが、設問と回答の対応を自動確定せず、この新しい候補は既存Judge入力へ渡しません。音響時刻の精度は未検証です。設計と検証記録は [`docs/transcript-alignment-design.ja.md`](docs/transcript-alignment-design.ja.md) と [`docs/transcript-alignment-tasks.ja.md`](docs/transcript-alignment-tasks.ja.md) を参照してください。
+
 自分で用意した複数音声をmanifestで試す場合は、`examples/jgrade_audio_manifest.json` と同じ形式で、候補者・試験レベル・ロールプレイごとの `audio_path`、タスク、JFS can-do基準、期待される情報を指定できます。`extract-objective` はこのリポジトリの `fluency.py` を使い、ひらがな文字起こし、発話率、ポーズ、モーラ速度、発話区間を出力します。`judge-mode mock` はAPIキーなしの疎通確認用で、正式なJFS判定ではありません。
 
 テスト用音声は `audio/` に集約して管理します。公式JFスタンダードのロールプレイ音声は、`examples/jfs_roleplay_catalog.json` に出典URL・レベル・達成度・評価PDFをまとめています。対象はA2/B1/B2/C1の13サンプルです。JFロールプレイテストにはC2ロールプレイがないため、C2判定はこの公式音声だけでは検証できません。サイトポリシー上、公式音声/PDF本体はローカル利用にとどめ、公式音声は `.gitignore` で追跡しないでください。
