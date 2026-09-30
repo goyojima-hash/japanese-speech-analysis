@@ -138,6 +138,23 @@ class TaskAssessmentApiTests(unittest.TestCase):
                          ["q1", "q2"])
         self.assertNotIn("task_assessment_shadow", result)
 
+    def test_bad_rubric_registry_does_not_erase_legacy_result(self) -> None:
+        with (
+            patch("jgrade_eval.api_service.judge_auto_cefr_with_live_panel_partial",
+                  side_effect=lambda roleplay_input, *args, **kwargs: (
+                      judge_auto_cefr_with_mock_panel(roleplay_input), [])),
+            patch("jgrade_eval.api_service.load_default_task_rubrics",
+                  side_effect=ValueError("bad operator config")),
+        ):
+            result = evaluate_speech_level(
+                Path("sample.mp3"), extractor=FakeExtractor(), judge_mode="live",
+                provider_specs=[ProviderSpec("openai", "fake-model")],
+                selected_modules=("accuracy",), task_context=_context(),
+                assessment_mode="shadow",
+            )
+        self.assertIn(result["task_rating"], {"◎", "○", "△", "×"})
+        self.assertEqual(result["task_assessment_shadow"]["status"], "rubric_registry_failed")
+
 
 if __name__ == "__main__":
     unittest.main()
