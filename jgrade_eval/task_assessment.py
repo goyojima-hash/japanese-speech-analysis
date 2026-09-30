@@ -46,21 +46,25 @@ def _assess_one(
     if answer is None:
         return TaskAssessment(status="insufficient_context", prompt_id=prompt.prompt_id,
                               reason="answer transcript is not confirmed")
-    if not prompt.rubric_id or not prompt.task_type:
-        return TaskAssessment(status="rubric_unavailable", prompt_id=prompt.prompt_id,
-                              reason="approved task metadata is missing")
-    rubric = rubrics.get(prompt.rubric_id)
-    if rubric is None:
-        return TaskAssessment(status="rubric_unavailable", prompt_id=prompt.prompt_id,
-                              reason="rubric is not registered")
-    if rubric.task_type != prompt.task_type:
-        return TaskAssessment(status="rubric_mismatch", prompt_id=prompt.prompt_id,
-                              reason="task type does not match rubric")
     try:
         observation = observe(prompt, answer)
         if observation.prompt_id != prompt.prompt_id or observation.segment_id != answer.segment_id:
             return TaskAssessment(status="invalid_observation", prompt_id=prompt.prompt_id,
                                   reason="observation references another answer")
+    except Exception as exc:
+        return TaskAssessment(status="observation_failed", prompt_id=prompt.prompt_id,
+                              reason=type(exc).__name__)
+    if not prompt.rubric_id or not prompt.task_type:
+        return TaskAssessment(status="rubric_unavailable", prompt_id=prompt.prompt_id,
+                              observation=observation, reason="task metadata is missing")
+    rubric = rubrics.get(prompt.rubric_id)
+    if rubric is None:
+        return TaskAssessment(status="rubric_unavailable", prompt_id=prompt.prompt_id,
+                              observation=observation, reason="rubric is not registered")
+    if rubric.task_type != prompt.task_type:
+        return TaskAssessment(status="rubric_mismatch", prompt_id=prompt.prompt_id,
+                              observation=observation, reason="task type does not match rubric")
+    try:
         return apply_rubric(rubric, observation, prompt)
     except Exception as exc:
         return TaskAssessment(status="observation_failed", prompt_id=prompt.prompt_id,
