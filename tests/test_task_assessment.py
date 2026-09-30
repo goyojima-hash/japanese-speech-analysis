@@ -63,6 +63,17 @@ class TaskAssessmentTests(unittest.TestCase):
                 "features": {}, "judge_id": "O1", "model": "fake", "rating": "○",
             }, answer=answer)
 
+    def test_observation_rejects_reserved_feature_keys(self) -> None:
+        answer = _confirmed_context().confirmed_answer_for("q1")
+        with self.assertRaisesRegex(ValueError, "reserved"):
+            TaskObservation.from_dict({
+                "prompt_id": "q1", "segment_id": "whole-recording",
+                "act_type": "statement", "target": "date",
+                "quote": "らいしゅう", "start_offset": 0, "end_offset": 5,
+                "features": {"act_type": "confirmation_request"},
+                "judge_id": "O1", "model": "fake",
+            }, answer=answer)
+
     def test_fixed_rubric_applies_without_llm(self) -> None:
         result = apply_rubric(_rubric(), _observation(), _confirmed_context().prompts[0])
         self.assertEqual(result.status, "applied")

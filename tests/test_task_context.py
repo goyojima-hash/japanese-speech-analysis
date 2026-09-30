@@ -75,6 +75,19 @@ class TaskContextTests(unittest.TestCase):
                 transcript="はい", duration_sec=1.0,
             )
 
+    def test_rejects_non_integer_transcript_offsets(self) -> None:
+        with self.assertRaisesRegex(ValueError, "integer"):
+            TaskContext.from_inputs(
+                roleplay_task="unknown", interaction_context=None,
+                task_context={
+                    "prompts": [{"prompt_id": "q1", "text": "質問1"}],
+                    "answers": [{"prompt_id": "q1", "start_offset": 0.5,
+                                 "end_offset": 2, "transcript_text": "はい",
+                                 "confirmed_by": "teacher-1"}],
+                },
+                transcript="はい", duration_sec=1.0,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
