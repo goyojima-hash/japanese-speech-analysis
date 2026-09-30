@@ -9,6 +9,7 @@ from uuid import uuid4
 from .audio_pipeline import FluencyExtractor
 from .deliberation import deliberate_auto_cefr
 from .evidence import EvidencePipeline, FluencySpeechEvidenceExtractor, LinguisticEvidenceExtractor
+from .evidence.alignment import build_transcript_alignment
 from .evidence.speech import objective_data_from_evidence
 from .fact_modules import DEFAULT_FACT_MODULES, SUPPORTED_FACT_MODULES, run_fact_modules
 from .live_judges import (
@@ -167,6 +168,7 @@ def evaluate_speech_level(
     }
     if include_objective_data:
         payload["objective_data"] = _public_objective_data(objective_data)
+        payload["transcript_alignment"] = build_transcript_alignment(evidence.speech).to_dict()
     if assessment_mode == "shadow":
         context = TaskContext.from_inputs(
             roleplay_task=roleplay_task,
