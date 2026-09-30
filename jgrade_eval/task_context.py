@@ -36,6 +36,7 @@ class TaskAnswer:
     start_offset: int | None = None
     end_offset: int | None = None
     transcript_text: str | None = None
+    confirmed_by: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +48,7 @@ class TaskAnswer:
             "start_offset": self.start_offset,
             "end_offset": self.end_offset,
             "transcript_text": self.transcript_text,
+            "confirmed_by": self.confirmed_by,
         }
 
 
@@ -120,6 +122,7 @@ class TaskContext:
                 start_offset=0,
                 end_offset=len(transcript),
                 transcript_text=transcript,
+                confirmed_by="request",
             ))
         return cls(prompts=tuple(prompts), answers=tuple(answers))
 
@@ -164,8 +167,8 @@ def _parse_answer(
             raise ValueError("task_context.answers transcript span does not match the shared transcript.")
     elif text is not None:
         raise ValueError("task_context.answers transcript span requires offsets.")
-    confirmed = item.get("mapping_status") == "confirmed" or item.get("confirmed") is True
-    status = "confirmed" if confirmed and start_offset is not None else (
+    confirmed_by = _optional_text(item.get("confirmed_by"))
+    status = "confirmed" if confirmed_by and start_offset is not None else (
         "text_candidate" if start_offset is not None else "time_only"
     )
     return TaskAnswer(
@@ -177,6 +180,7 @@ def _parse_answer(
         start_offset=start_offset,
         end_offset=end_offset,
         transcript_text=text,
+        confirmed_by=confirmed_by,
     )
 
 

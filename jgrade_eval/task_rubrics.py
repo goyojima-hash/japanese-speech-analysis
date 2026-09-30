@@ -58,6 +58,7 @@ class TaskRubric:
 @dataclass(frozen=True)
 class TaskAssessment:
     status: str
+    prompt_id: str | None = None
     rating: Rating | None = None
     rule_id: str | None = None
     rubric_id: str | None = None
@@ -68,6 +69,7 @@ class TaskAssessment:
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
+            "prompt_id": self.prompt_id,
             "rating": self.rating.value if self.rating is not None else None,
             "rule_id": self.rule_id,
             "rubric_id": self.rubric_id,
@@ -79,9 +81,11 @@ class TaskAssessment:
 
 def apply_rubric(rubric: TaskRubric, observation: TaskObservation, prompt: TaskPrompt) -> TaskAssessment:
     if prompt.rubric_id != rubric.rubric_id or prompt.task_type != rubric.task_type:
-        return TaskAssessment(status="rubric_mismatch", reason="prompt metadata does not match rubric")
+        return TaskAssessment(status="rubric_mismatch", prompt_id=prompt.prompt_id,
+                              reason="prompt metadata does not match rubric")
     if observation.prompt_id != prompt.prompt_id:
-        return TaskAssessment(status="invalid_observation", reason="prompt_id mismatch")
+        return TaskAssessment(status="invalid_observation", prompt_id=prompt.prompt_id,
+                              reason="prompt_id mismatch")
     values: dict[str, str | bool | int | None] = {
         "act_type": observation.act_type,
         "target": observation.target,
@@ -92,14 +96,17 @@ def apply_rubric(rubric: TaskRubric, observation: TaskObservation, prompt: TaskP
         for key, expected in rule.all_features.items()
     )]
     if not matches:
-        return TaskAssessment(status="no_rule_match", rubric_id=rubric.rubric_id,
+        return TaskAssessment(status="no_rule_match", prompt_id=prompt.prompt_id,
+                              rubric_id=rubric.rubric_id,
                               rubric_version=rubric.version, observation=observation)
     if len(matches) > 1:
-        return TaskAssessment(status="conflicted", rubric_id=rubric.rubric_id,
+        return TaskAssessment(status="conflicted", prompt_id=prompt.prompt_id,
+                              rubric_id=rubric.rubric_id,
                               rubric_version=rubric.version, observation=observation,
                               reason="more than one rubric rule matched")
     rule = matches[0]
-    return TaskAssessment(status="applied", rating=rule.rating, rule_id=rule.rule_id,
+    return TaskAssessment(status="applied", prompt_id=prompt.prompt_id,
+                          rating=rule.rating, rule_id=rule.rule_id,
                           rubric_id=rubric.rubric_id, rubric_version=rubric.version,
                           observation=observation)
 
