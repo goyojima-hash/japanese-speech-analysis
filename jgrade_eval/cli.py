@@ -234,12 +234,17 @@ def main() -> None:
         context = _read_json(args.task_context_file) if args.task_context_file else None
         if context is not None and not isinstance(context, dict):
             parser.error("--task-context-file must contain a JSON object")
+        roleplay_task = args.roleplay_task
+        if roleplay_task == "unknown" and context is not None:
+            prompts = context.get("prompts")
+            if isinstance(prompts, list) and len(prompts) == 1 and isinstance(prompts[0], dict):
+                roleplay_task = str(prompts[0].get("text") or "unknown")
         modules = tuple(item.strip() for item in args.modules.split(",")) if args.modules is not None else None
         if modules is not None and (not modules or any(not item for item in modules)):
             parser.error("--modules requires comma-separated module names")
         result = api_service.evaluate_speech_level(
             args.audio,
-            roleplay_task=args.roleplay_task,
+            roleplay_task=roleplay_task,
             judge_mode=args.judge_mode,
             provider_specs=(parse_provider_specs(args.judge_providers)
                             if args.judge_mode == "live" and args.judge_providers else None),
