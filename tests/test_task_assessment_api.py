@@ -100,6 +100,33 @@ class TaskAssessmentApiTests(unittest.TestCase):
         self.assertEqual(result["task_assessment_shadow"]["status"], "mock_unavailable")
         self.assertIsNone(result["task_assessment_shadow"]["rating"])
 
+    def test_shadow_keeps_observation_without_registered_rubric(self) -> None:
+        def fake_observe(prompt, answer, spec, *, timeout_sec):
+            return TaskObservation.from_dict({
+                "prompt_id": prompt.prompt_id, "segment_id": answer.segment_id,
+                "act_type": "question", "target": None,
+                "quote": answer.transcript_text[:5], "start_offset": answer.start_offset,
+                "end_offset": answer.start_offset + 5,
+                "features": {}, "judge_id": "O1", "model": spec.model,
+            }, answer=answer)
+
+        with (
+            patch("jgrade_eval.api_service.judge_auto_cefr_with_live_panel_partial",
+                  side_effect=lambda roleplay_input, *args, **kwargs: (
+                      judge_auto_cefr_with_mock_panel(roleplay_input), [])),
+            patch("jgrade_eval.api_service.observe_task_with_provider", side_effect=fake_observe),
+        ):
+            result = evaluate_speech_level(
+                Path("sample.mp3"), extractor=FakeExtractor(), judge_mode="live",
+                provider_specs=[ProviderSpec("openai", "fake-model")],
+                selected_modules=("accuracy",), task_context=_context(),
+                assessment_mode="shadow", task_rubrics={},
+            )
+        shadow = result["task_assessment_shadow"]
+        self.assertEqual(shadow["status"], "rubric_unavailable")
+        self.assertEqual(shadow["observation"]["act_type"], "question")
+        self.assertIsNone(shadow["rating"])
+
     def test_shadow_keeps_two_confirmed_answers_separate(self) -> None:
         transcript = "らいしゅうのきんようびでいいですか"
         task_context = {
@@ -139,12 +166,21 @@ class TaskAssessmentApiTests(unittest.TestCase):
         self.assertNotIn("task_assessment_shadow", result)
 
     def test_bad_rubric_registry_does_not_erase_legacy_result(self) -> None:
+        def fake_observe(prompt, answer, spec, *, timeout_sec):
+            return TaskObservation.from_dict({
+                "prompt_id": prompt.prompt_id, "segment_id": answer.segment_id,
+                "act_type": "question", "target": None,
+                "quote": answer.transcript_text[:5], "start_offset": answer.start_offset,
+                "end_offset": answer.start_offset + 5,
+                "features": {}, "judge_id": "O1", "model": spec.model,
+            }, answer=answer)
         with (
             patch("jgrade_eval.api_service.judge_auto_cefr_with_live_panel_partial",
                   side_effect=lambda roleplay_input, *args, **kwargs: (
                       judge_auto_cefr_with_mock_panel(roleplay_input), [])),
             patch("jgrade_eval.api_service.load_default_task_rubrics",
                   side_effect=ValueError("bad operator config")),
+            patch("jgrade_eval.api_service.observe_task_with_provider", side_effect=fake_observe),
         ):
             result = evaluate_speech_level(
                 Path("sample.mp3"), extractor=FakeExtractor(), judge_mode="live",
@@ -154,6 +190,7 @@ class TaskAssessmentApiTests(unittest.TestCase):
             )
         self.assertIn(result["task_rating"], {"◎", "○", "△", "×"})
         self.assertEqual(result["task_assessment_shadow"]["status"], "rubric_registry_failed")
+        self.assertEqual(result["task_assessment_shadow"]["observation"]["act_type"], "question")
 
 
 if __name__ == "__main__":
