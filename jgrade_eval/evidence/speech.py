@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
+from .alignment import build_transcript_alignment
 from .models import MoraTiming, SpeechEvidence, TimedSpan
 
 
@@ -77,6 +78,7 @@ def objective_data_from_evidence(data: SpeechEvidence, *, audio_path: str) -> di
         "pause_segments": pauses,
         "speech_segments": [span.to_dict() for span in data.speech_segments],
         "mora_timings": [timing.to_dict() for timing in data.mora_timings],
+        "transcript_alignment": build_transcript_alignment(data).to_dict(),
         **dict(data.provenance),
     }
 
