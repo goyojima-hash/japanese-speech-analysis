@@ -22,7 +22,7 @@ from .range import RangeExtractor
 from .task_assessment import assess_shadow_task, assess_shadow_tasks
 from .task_context import TaskContext
 from .task_observation import observe_task_with_provider
-from .task_rubrics import TaskAssessment, TaskRubric
+from .task_rubrics import TaskAssessment, TaskRubric, load_default_task_rubrics
 from .tuning_profile import TuningProfile, compose_auto_cefr_system_prompt
 
 
@@ -184,12 +184,13 @@ def evaluate_speech_level(
                 shadows = (TaskAssessment(status="insufficient_context", reason="no prompt"),)
         else:
             spec = (provider_specs or [])[0]
+            available_rubrics = task_rubrics if task_rubrics is not None else load_default_task_rubrics()
             observe = lambda prompt, answer: observe_task_with_provider(
                 prompt, answer, spec, timeout_sec=min(timeout_sec, 20.0),
             )
-            shadows = (assess_shadow_task(context, task_rubrics or {}, observe=observe),)
+            shadows = (assess_shadow_task(context, available_rubrics, observe=observe),)
             if len(context.prompts) > 1:
-                shadows = assess_shadow_tasks(context, task_rubrics or {}, observe=observe)
+                shadows = assess_shadow_tasks(context, available_rubrics, observe=observe)
         if len(context.prompts) > 1:
             payload["task_assessments_shadow"] = [item.to_dict() for item in shadows]
         else:
