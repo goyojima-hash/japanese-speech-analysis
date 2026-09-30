@@ -497,6 +497,8 @@ HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまた�
 
 共通Evidenceから、ひらがな文字起こしと既存CTC時刻列の保守的な対応候補 `transcript-alignment.v1` を派生できます。APIで客観データを返す場合は `objective_data` の形を変えず、同階層の `transcript_alignment` に対応状況と来歴を返します。Interactionの回答候補にも未確定の文字範囲候補を付けますが、設問と回答の対応を自動確定せず、この新しい候補は既存Judge入力へ渡しません。音響時刻の精度は未検証です。設計と検証記録は [`docs/transcript-alignment-design.ja.md`](docs/transcript-alignment-design.ja.md) と [`docs/transcript-alignment-tasks.ja.md`](docs/transcript-alignment-tasks.ja.md) を参照してください。
 
+音響時刻を改善できるかを試す独立コマンドもあります。`.venv/bin/python -m jgrade_eval.alignment_experiment audio/sample.mp3` は既存の日本語Wav2Vec2からCTC再整列候補をJSONで出します。人手修正したひらがなを使う場合は `--transcript-file transcript.txt` を付けます。この実験コマンドは通常の5モジュール・Judge経路を変更せず、`complete` も時刻精度や発話内容の保証ではありません。設計と残タスクは [`docs/forced-alignment-v2-design.ja.md`](docs/forced-alignment-v2-design.ja.md) を参照してください。
+
 自分で用意した複数音声をmanifestで試す場合は、`examples/jgrade_audio_manifest.json` と同じ形式で、候補者・試験レベル・ロールプレイごとの `audio_path`、タスク、JFS can-do基準、期待される情報を指定できます。`extract-objective` はこのリポジトリの `fluency.py` を使い、ひらがな文字起こし、発話率、ポーズ、モーラ速度、発話区間を出力します。`judge-mode mock` はAPIキーなしの疎通確認用で、正式なJFS判定ではありません。
 
 テスト用音声は `audio/` に集約して管理します。公式JFスタンダードのロールプレイ音声は、`examples/jfs_roleplay_catalog.json` に出典URL・レベル・達成度・評価PDFをまとめています。対象はA2/B1/B2/C1の13サンプルです。JFロールプレイテストにはC2ロールプレイがないため、C2判定はこの公式音声だけでは検証できません。サイトポリシー上、公式音声/PDF本体はローカル利用にとどめ、公式音声は `.gitignore` で追跡しないでください。
