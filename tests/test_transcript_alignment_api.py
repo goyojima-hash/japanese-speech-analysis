@@ -34,6 +34,13 @@ class TranscriptAlignmentApiTests(unittest.TestCase):
         self.assertEqual(result["transcript_alignment"]["status"], "complete")
         self.assertEqual(result["transcript_alignment"]["units"][0]["start_offset"], 0)
 
+    def test_alignment_is_not_exposed_when_objective_data_is_withheld(self) -> None:
+        result = evaluate_speech_level(Path("sample.wav"), extractor=AlignedExtractor(),
+                                       judge_mode="mock", selected_modules=(),
+                                       include_objective_data=False)
+        self.assertNotIn("objective_data", result)
+        self.assertNotIn("transcript_alignment", result)
+
 
 if __name__ == "__main__":
     unittest.main()

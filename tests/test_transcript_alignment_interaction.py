@@ -6,6 +6,7 @@ from jgrade_eval.evidence.models import (
     EvidenceBundle, LinguisticEvidence, MoraTiming, SourceEvidence, SpeechEvidence, TimedSpan,
 )
 from jgrade_eval.interaction import InteractionModule
+from jgrade_eval.fact_modules import run_fact_modules
 
 
 def bundle(*, mismatch: bool = False) -> EvidenceBundle:
@@ -46,6 +47,16 @@ class AlignmentInteractionTests(unittest.TestCase):
         self.assertTrue(data["candidate_answer_segments"])
         self.assertTrue(all("transcript_text" not in item
                             for item in data["candidate_answer_segments"]))
+
+    def test_new_candidates_do_not_change_legacy_judge_packet(self) -> None:
+        run = run_fact_modules(bundle(), selected_modules=("interaction",))
+        public_segments = run.packets["interaction_data"]["candidate_answer_segments"]
+        judge_segments = run.add_packets_to_roleplay_input({})["interaction_data"]["candidate_answer_segments"]
+        self.assertIn("transcript_text", public_segments[0])
+        self.assertEqual([item["mapping_status"] for item in public_segments],
+                         [item["mapping_status"] for item in judge_segments])
+        self.assertTrue(all("transcript_text" not in item and "alignment_status" not in item
+                            for item in judge_segments))
 
 
 if __name__ == "__main__":
