@@ -64,6 +64,7 @@ class InteractionModule:
         context = _normalize_context(
             interaction_context, prompt_text=prompt_text, duration=evidence.speech.duration_sec,
             pauses=tuple((pause.start, pause.end) for pause in evidence.speech.pause_segments),
+            transcript=evidence.speech.raw_transcript_hiragana,
         )
         has_prompt = bool(context["prompts"])
         duration = evidence.speech.duration_sec
@@ -105,6 +106,7 @@ def _normalize_context(
     prompt_text: str | None,
     duration: float,
     pauses: tuple[tuple[float, float], ...],
+    transcript: str,
 ) -> dict[str, Any]:
     raw = dict(value or {})
     prompts = raw.get("prompts", [])
@@ -135,12 +137,26 @@ def _normalize_context(
         prompt_id = item.get("prompt_id")
         if prompt_id is not None and str(prompt_id) not in ids:
             raise ValueError("interaction_context.answer_segments references an unknown prompt_id.")
-        segments.append({
+        segment = {
             "segment_id": str(item.get("segment_id") or f"segment-{index}"),
             "start_sec": start, "end_sec": end, "prompt_id": prompt_id,
             "mapping_status": "confirmed" if prompt_id else "candidate",
             "boundary_evidence": list(item.get("boundary_evidence") or ["user_supplied"]),
-        })
+        }
+        text_fields = {"start_offset", "end_offset", "transcript_text", "confirmed_by"}
+        if any(key in item for key in text_fields):
+            start_offset = item.get("start_offset")
+            end_offset = item.get("end_offset")
+            text = item.get("transcript_text")
+            confirmed_by = str(item.get("confirmed_by") or "").strip()
+            if (type(start_offset) is not int or type(end_offset) is not int
+                    or not 0 <= start_offset < end_offset <= len(transcript)
+                    or text != transcript[start_offset:end_offset]
+                    or not confirmed_by or prompt_id is None):
+                raise ValueError("interaction_context.answer_segments transcript span must be confirmed and match shared transcript.")
+            segment.update({"start_offset": start_offset, "end_offset": end_offset,
+                            "transcript_text": text, "confirmed_by": confirmed_by})
+        segments.append(segment)
     if not segments:
         boundaries = [end for start, end in pauses if end - start >= 1.0 and 0 < end < duration]
         starts = [0.0, *boundaries]
