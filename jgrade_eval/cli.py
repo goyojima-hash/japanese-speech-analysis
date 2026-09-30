@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from . import api_service
 from .audio_pipeline import (
     ObjectiveExtractionError,
     evaluate_audio_manifest,
@@ -86,6 +87,22 @@ def main() -> None:
         help="base directory for relative audio_path entries; defaults to cwd",
     )
     audio_parser.add_argument("--output", type=Path)
+
+    speech_parser = subparsers.add_parser(
+        "evaluate-speech",
+        help="Run the same five-module and Judge path as the API for one audio file",
+    )
+    speech_parser.add_argument("--audio", required=True, type=Path)
+    speech_parser.add_argument("--judge-mode", choices=["mock", "live"], default="mock")
+    speech_parser.add_argument("--judge-providers", help="comma-separated provider:model list for live mode")
+    speech_parser.add_argument("--env-file", type=Path)
+    speech_parser.add_argument("--timeout-sec", type=float, default=60.0)
+    speech_parser.add_argument("--roleplay-task", default="unknown")
+    speech_parser.add_argument("--modules", help="comma-separated fact module names; default is all five")
+    speech_parser.add_argument("--task-context-file", type=Path,
+                               help="JSON task context; confirmed transcript spans are required for shadow observation")
+    speech_parser.add_argument("--assessment-mode", choices=["off", "shadow"], default="off")
+    speech_parser.add_argument("--output", type=Path, help="save the legacy and shadow results together as JSON")
 
     objective_parser = subparsers.add_parser(
         "extract-objective",
@@ -212,6 +229,25 @@ def main() -> None:
             parser.exit(2, f"[エラー] 客観データ抽出に失敗しました。\n{exc}\n")
         except JudgeProviderError as exc:
             parser.exit(2, f"[エラー] LLM Judge呼び出しに失敗しました。\n{exc}\n")
+    elif args.command == "evaluate-speech":
+        load_env_file(args.env_file)
+        context = _read_json(args.task_context_file) if args.task_context_file else None
+        if context is not None and not isinstance(context, dict):
+            parser.error("--task-context-file must contain a JSON object")
+        modules = tuple(item.strip() for item in args.modules.split(",")) if args.modules is not None else None
+        if modules is not None and (not modules or any(not item for item in modules)):
+            parser.error("--modules requires comma-separated module names")
+        result = api_service.evaluate_speech_level(
+            args.audio,
+            roleplay_task=args.roleplay_task,
+            judge_mode=args.judge_mode,
+            provider_specs=(parse_provider_specs(args.judge_providers)
+                            if args.judge_mode == "live" and args.judge_providers else None),
+            timeout_sec=args.timeout_sec,
+            selected_modules=modules,
+            task_context=context,
+            assessment_mode=args.assessment_mode,
+        )
     elif args.command == "extract-objective":
         manifest = _read_json(args.manifest)
         try:
