@@ -184,13 +184,22 @@ def evaluate_speech_level(
                 shadows = (TaskAssessment(status="insufficient_context", reason="no prompt"),)
         else:
             spec = (provider_specs or [])[0]
-            available_rubrics = task_rubrics if task_rubrics is not None else load_default_task_rubrics()
-            observe = lambda prompt, answer: observe_task_with_provider(
-                prompt, answer, spec, timeout_sec=min(timeout_sec, 20.0),
-            )
-            shadows = (assess_shadow_task(context, available_rubrics, observe=observe),)
-            if len(context.prompts) > 1:
-                shadows = assess_shadow_tasks(context, available_rubrics, observe=observe)
+            try:
+                available_rubrics = task_rubrics if task_rubrics is not None else load_default_task_rubrics()
+            except Exception as exc:
+                shadows = tuple(TaskAssessment(
+                    status="rubric_registry_failed", prompt_id=prompt.prompt_id,
+                    reason=type(exc).__name__,
+                ) for prompt in context.prompts)
+                if not shadows:
+                    shadows = (TaskAssessment(status="rubric_registry_failed", reason=type(exc).__name__),)
+            else:
+                observe = lambda prompt, answer: observe_task_with_provider(
+                    prompt, answer, spec, timeout_sec=min(timeout_sec, 20.0),
+                )
+                shadows = (assess_shadow_task(context, available_rubrics, observe=observe),)
+                if len(context.prompts) > 1:
+                    shadows = assess_shadow_tasks(context, available_rubrics, observe=observe)
         if len(context.prompts) > 1:
             payload["task_assessments_shadow"] = [item.to_dict() for item in shadows]
         else:
