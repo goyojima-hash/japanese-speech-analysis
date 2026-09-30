@@ -87,9 +87,9 @@ def apply_rubric(rubric: TaskRubric, observation: TaskObservation, prompt: TaskP
         return TaskAssessment(status="invalid_observation", prompt_id=prompt.prompt_id,
                               reason="prompt_id mismatch")
     values: dict[str, str | bool | int | None] = {
+        **observation.features,
         "act_type": observation.act_type,
         "target": observation.target,
-        **observation.features,
     }
     matches = [rule for rule in rubric.rules if all(
         key in values and type(values[key]) is type(expected) and values[key] == expected

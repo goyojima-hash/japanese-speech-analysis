@@ -194,4 +194,8 @@ def _optional_float(value: Any) -> float | None:
 
 
 def _optional_int(value: Any) -> int | None:
-    return int(value) if value is not None else None
+    if value is None:
+        return None
+    if type(value) is not int:
+        raise ValueError("task_context transcript offsets must be integers.")
+    return value

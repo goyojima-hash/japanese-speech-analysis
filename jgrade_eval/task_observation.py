@@ -11,6 +11,7 @@ from .task_context import TaskAnswer
 
 
 TASK_OBSERVATION_SCHEMA_VERSION = "task-observation.v1"
+_RESERVED_FEATURES = {"act_type", "target", "prompt_id", "segment_id", "rating", "task_rating", "score"}
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,8 @@ class TaskObservation:
             for key, value in raw_features.items()
         ):
             raise ValueError("TaskObservation features must be primitive named values.")
+        if _RESERVED_FEATURES.intersection(raw_features):
+            raise ValueError("TaskObservation features contain reserved keys.")
         judge_id = str(data.get("judge_id") or "").strip()
         model = str(data.get("model") or "").strip()
         if not judge_id or not model:
