@@ -19,7 +19,7 @@ from .live_judges import (
 from .mock_judges import judge_auto_cefr_with_mock_panel
 from .models import AutoLevelJudgeResult, Rating
 from .range import RangeExtractor
-from .task_assessment import assess_shadow_task
+from .task_assessment import assess_shadow_task, assess_shadow_tasks
 from .task_context import TaskContext
 from .task_observation import observe_task_with_provider
 from .task_rubrics import TaskAssessment, TaskRubric
@@ -176,17 +176,24 @@ def evaluate_speech_level(
             duration_sec=evidence.speech.duration_sec,
         )
         if judge_mode == "mock":
-            shadow = TaskAssessment(status="mock_unavailable", reason="mock Judge is not a speech-act model")
+            shadows = tuple(TaskAssessment(
+                status="mock_unavailable", prompt_id=prompt.prompt_id,
+                reason="mock Judge is not a speech-act model",
+            ) for prompt in context.prompts)
+            if not shadows:
+                shadows = (TaskAssessment(status="insufficient_context", reason="no prompt"),)
         else:
             spec = (provider_specs or [])[0]
-            shadow = assess_shadow_task(
-                context,
-                task_rubrics or {},
-                observe=lambda prompt, answer: observe_task_with_provider(
-                    prompt, answer, spec, timeout_sec=min(timeout_sec, 20.0),
-                ),
+            observe = lambda prompt, answer: observe_task_with_provider(
+                prompt, answer, spec, timeout_sec=min(timeout_sec, 20.0),
             )
-        payload["task_assessment_shadow"] = shadow.to_dict()
+            shadows = (assess_shadow_task(context, task_rubrics or {}, observe=observe),)
+            if len(context.prompts) > 1:
+                shadows = assess_shadow_tasks(context, task_rubrics or {}, observe=observe)
+        if len(context.prompts) > 1:
+            payload["task_assessments_shadow"] = [item.to_dict() for item in shadows]
+        else:
+            payload["task_assessment_shadow"] = shadows[0].to_dict()
     return payload
 
 
