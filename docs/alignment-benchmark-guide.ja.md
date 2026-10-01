@@ -68,3 +68,14 @@
 WhisperXの日本語既定モデルの重みを固定版で使いますが、WhisperX本体は導入しません。最初は約1.3GBの重み取得が必要です。音声はローカルで推論し、有料API・Judgeは使いません。両モデルは同じWav2Vec2系で、ひらがなASRにも依存します。特に比較側は漢字混じり表記で学習しているので、不一致を既存方式の誤りと決めつけないでください。
 
 既存datasetを変更せず、別フォルダに比較側の整列結果とレポートだけを保存します。人手正解による測定とは独立した補助検証です。[選定根拠と設計](alignment-cross-model-design.ja.md)も参照してください。
+
+## VADの発話・無音候補と照合する
+
+```sh
+.venv/bin/python -m jgrade_eval.alignment_vad_check \
+  outputs/alignment-benchmark-new --output-dir outputs/alignment-vad-check-new
+```
+
+既存のSilero VADをローカルで実行し、各文字時刻とVAD発話区間の重なりを`report.json`へ保存します。`outside_unit_count`はVAD発話区間の外へ一部でも出た文字単位数、`fully_outside_unit_count`は全体が発話区間外だった文字単位数です。`outside_speech_duration_sec`は文字時刻のうちVAD発話区間外だった時間の合計であり、録音全体の無音時間ではありません。
+
+VAD区間は30msの余白を含む推定です。VADとの重なりが100%でも、文字起こしや時刻の正確さは証明できません。0.5秒以上のVAD無音候補をまたぐ文字も確認用に示しますが、自動削除・修正・正解承認はしません。元dataset、5モジュール、Judge、通常処理のVADパラメータは変更しません。
