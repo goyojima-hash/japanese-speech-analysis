@@ -22,8 +22,10 @@ class BenchmarkCLITests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 prepare([audio], output)
             with redirect_stdout(StringIO()) as stdout:
-                self.assertEqual(main(["evaluate", str(output)]), 0)
+                self.assertEqual(main(["evaluate", str(output), "--report", str(output / "report.json")]), 0)
             self.assertEqual(json.loads(stdout.getvalue())["pending_samples"], 1)
+            with self.assertRaises(FileExistsError):
+                main(["evaluate", str(output), "--report", str(output / "report.json")])
 
     def test_failed_capture_has_no_complete_manifest(self):
         with TemporaryDirectory() as temp:
@@ -66,3 +68,19 @@ class BenchmarkCLITests(unittest.TestCase):
             for paths in ([], [Path("a.wav"), Path("a.wav")]):
                 with self.assertRaises(ValueError):
                     prepare(paths, Path(temp) / "new")
+
+    def test_empty_complete_dataset_cannot_report_success(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "manifest.json").write_text(json.dumps(dict(
+                schema_version="alignment-dataset.v1", status="complete", samples=[])))
+            with self.assertRaises(ValueError):
+                evaluate(root)
+
+    def test_duplicate_content_capture_rejected(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp) / "dataset"
+            with patch("jgrade_eval.alignment_benchmark_cli.capture", return_value=prediction()):
+                with self.assertRaises(ValueError):
+                    prepare([Path("one.wav"), Path("two.wav")], root)
+            self.assertFalse((root / "manifest.json").exists())

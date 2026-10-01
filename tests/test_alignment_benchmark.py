@@ -93,3 +93,32 @@ class BenchmarkTests(unittest.TestCase):
         report = evaluate_sample(reviewed(), prediction())
         with self.assertRaises(ValueError):
             summarize([report, report])
+
+    def test_missing_method_keeps_all_gold_in_coverage_denominator(self):
+        pred = prediction()
+        del pred["methods"]["ctc_argmax"]
+        result = evaluate_sample(reviewed(), pred)
+        self.assertEqual(result["methods"]["ctc_argmax"]["eligible_segments"], 1)
+        self.assertEqual(result["methods"]["ctc_argmax"]["coverage"], 0)
+
+    def test_invalid_reference_schema_status_ids_and_duration_rejected(self):
+        for field, value in (("schema_version", "unknown"), ("duration_sec", 0)):
+            ref = reviewed()
+            ref[field] = value
+            with self.assertRaises(ValueError):
+                evaluate_sample(ref, prediction())
+        ref = reviewed()
+        ref["segments"].append(deepcopy(ref["segments"][0]))
+        with self.assertRaises(ValueError):
+            evaluate_sample(ref, prediction())
+        ref = reviewed()
+        ref["transcript_review"]["status"] = "typo"
+        with self.assertRaises(ValueError):
+            evaluate_sample(ref, prediction())
+
+    def test_no_alignment_still_proposes_unverified_full_text(self):
+        pred = prediction()
+        pred["methods"]["ctc_viterbi"]["units"] = []
+        template = make_reference_template(pred)
+        self.assertEqual(len(template["segments"]), 1)
+        self.assertIsNone(template["segments"][0]["suggested_start_sec"])
