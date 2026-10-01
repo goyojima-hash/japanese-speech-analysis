@@ -1,13 +1,14 @@
 """Offline prepare/evaluate commands; no normal module or Judge path changes."""
+
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
-from importlib.metadata import version, PackageNotFoundError
 import json
-from pathlib import Path
 import sys
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 import numpy as np
 
@@ -19,13 +20,15 @@ from .evidence.models import MoraTiming, SpeechEvidence
 
 
 def capture(audio_path: Path) -> dict:
-    from fluency import load_vumichien, transcribe, get_mora_timings
+    from fluency import get_mora_timings, load_vumichien, transcribe
 
     if not audio_path.is_file():
         raise FileNotFoundError(audio_path)
     before_hash = _hash_file(audio_path)
     model, processor, device = load_vumichien()
-    text, logits, duration, audio = transcribe(model, processor, device, str(audio_path))
+    text, logits, duration, audio = transcribe(
+        model, processor, device, str(audio_path)
+    )
     if before_hash != _hash_file(audio_path):
         raise ValueError("Audio changed during capture")
     text = "".join(text.split())
@@ -35,32 +38,59 @@ def capture(audio_path: Path) -> dict:
         labels[token_id] = label
     blank = processor.tokenizer.pad_token_id
     raw = get_mora_timings(logits, blank, labels)
-    speech = SpeechEvidence(text, "", duration, (), (),
-                            tuple(MoraTiming.from_dict(m) for m in raw), (),
-                            (("stt_model", MODEL_ID),))
-    chunks = [CTCLogitChunk(i * 480_000, min(480_000, len(audio) - i * 480_000),
-                           np.asarray(chunk[0])) for i, chunk in enumerate(logits)]
-    aligned = align_ctc_chunks(chunks, text, vocab, blank_id=blank,
-                               sample_rate=16_000, model_id=MODEL_ID)
+    speech = SpeechEvidence(
+        text,
+        "",
+        duration,
+        (),
+        (),
+        tuple(MoraTiming.from_dict(m) for m in raw),
+        (),
+        (("stt_model", MODEL_ID),),
+    )
+    chunks = [
+        CTCLogitChunk(
+            i * 480_000, min(480_000, len(audio) - i * 480_000), np.asarray(chunk[0])
+        )
+        for i, chunk in enumerate(logits)
+    ]
+    aligned = align_ctc_chunks(
+        chunks, text, vocab, blank_id=blank, sample_rate=16_000, model_id=MODEL_ID
+    )
     libraries = {}
     for package in ("torch", "transformers", "numpy", "librosa"):
         try:
             libraries[package] = version(package)
         except PackageNotFoundError:
             libraries[package] = None
-    return dict(schema_version="alignment-predictions.v1", sample_id=audio_path.stem,
-                source=dict(audio_sha256=before_hash, duration_sec=duration,
-                            model_id=MODEL_ID, model_revision=getattr(getattr(model, "config", None),
-                                                                     "_commit_hash", None),
-                            sample_rate=16_000, libraries=libraries),
-                transcript_hiragana=text, transcript_source="asr", baseline_raw_mora_timings=raw,
-                methods=dict(ctc_argmax=build_transcript_alignment(speech).to_dict(),
-                             ctc_viterbi=aligned.to_dict()))
+    return {
+        "schema_version": "alignment-predictions.v1",
+        "sample_id": audio_path.stem,
+        "source": {
+            "audio_sha256": before_hash,
+            "duration_sec": duration,
+            "model_id": MODEL_ID,
+            "model_revision": getattr(
+                getattr(model, "config", None), "_commit_hash", None
+            ),
+            "sample_rate": 16_000,
+            "libraries": libraries,
+        },
+        "transcript_hiragana": text,
+        "transcript_source": "asr",
+        "baseline_raw_mora_timings": raw,
+        "methods": {
+            "ctc_argmax": build_transcript_alignment(speech).to_dict(),
+            "ctc_viterbi": aligned.to_dict(),
+        },
+    }
 
 
 def _write(path: Path, value: dict) -> None:
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
-                    encoding="utf-8")
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def prepare(audio_paths: list[Path], output_dir: Path) -> dict:
@@ -82,10 +112,20 @@ def prepare(audio_paths: list[Path], output_dir: Path) -> dict:
         filename = f"{len(samples) + 1:03d}.json"
         _write(output_dir / "predictions" / filename, prediction)
         _write(output_dir / "references" / filename, reference)
-        samples.append(dict(sample_id=prediction["sample_id"], audio_path=str(audio.resolve()),
-                            prediction=f"predictions/{filename}", reference=f"references/{filename}"))
-    manifest = dict(schema_version="alignment-dataset.v1", status="complete",
-                    created_at=datetime.now(timezone.utc).isoformat(), samples=samples)
+        samples.append(
+            {
+                "sample_id": prediction["sample_id"],
+                "audio_path": str(audio.resolve()),
+                "prediction": f"predictions/{filename}",
+                "reference": f"references/{filename}",
+            }
+        )
+    manifest = {
+        "schema_version": "alignment-dataset.v1",
+        "status": "complete",
+        "created_at": datetime.now(UTC).isoformat(),
+        "samples": samples,
+    }
     _write(output_dir / "manifest.json", manifest)
     return manifest
 
@@ -99,7 +139,10 @@ def _read_local(directory: Path, relative: str) -> dict:
 
 def evaluate(directory: Path) -> dict:
     manifest = _read_local(directory, "manifest.json")
-    if manifest.get("schema_version") != "alignment-dataset.v1" or manifest.get("status") != "complete":
+    if (
+        manifest.get("schema_version") != "alignment-dataset.v1"
+        or manifest.get("status") != "complete"
+    ):
         raise ValueError("A complete supported capture manifest is required")
     if not manifest.get("samples"):
         raise ValueError("A benchmark requires at least one recording")
@@ -116,19 +159,33 @@ def evaluate(directory: Path) -> dict:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Human-reference alignment benchmark (offline only)")
+    parser = argparse.ArgumentParser(
+        description="Human-reference alignment benchmark (offline only)"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
-    prep = commands.add_parser("prepare", help="Capture both methods and unreviewed annotation templates")
+    prep = commands.add_parser(
+        "prepare", help="Capture both methods and unreviewed annotation templates"
+    )
     prep.add_argument("audio_paths", nargs="+", type=Path)
     prep.add_argument("--output-dir", required=True, type=Path)
-    evaluation = commands.add_parser("evaluate", help="Measure only human-reviewed references")
+    evaluation = commands.add_parser(
+        "evaluate", help="Measure only human-reviewed references"
+    )
     evaluation.add_argument("dataset_dir", type=Path)
-    evaluation.add_argument("--report", type=Path, help="Save a new JSON report (never overwrite)")
+    evaluation.add_argument(
+        "--report", type=Path, help="Save a new JSON report (never overwrite)"
+    )
     args = parser.parse_args(argv)
-    report = prepare(args.audio_paths, args.output_dir) if args.command == "prepare" else evaluate(args.dataset_dir)
+    report = (
+        prepare(args.audio_paths, args.output_dir)
+        if args.command == "prepare"
+        else evaluate(args.dataset_dir)
+    )
     if args.command == "evaluate" and args.report is not None:
         with args.report.open("x", encoding="utf-8") as target:
-            target.write(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+            target.write(
+                json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+            )
     print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
     return 0
 
