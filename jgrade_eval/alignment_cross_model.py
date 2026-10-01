@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from statistics import median
 
-from .alignment_benchmark import _span
+from .alignment_benchmark import _number, _span
 from .alignment_benchmark_cli import _read_local, _write, evaluate
 from .alignment_experiment import _hash_file
 from .ctc_forced_alignment import CTCLogitChunk, ForcedAlignmentResult, align_ctc_chunks
@@ -103,6 +103,8 @@ def compare_candidates(primary: dict, alternate: dict, segments: list[dict]) -> 
     ):
         raise ValueError("Only identical audio and text can be compared")
     text, duration = primary["transcript_hiragana"], primary["source"]["duration_sec"]
+    if not _number(duration) or duration <= 0:
+        raise ValueError("Invalid source duration")
     items, ids = [], set()
     for segment in segments:
         a, b = segment["start_offset"], segment["end_offset"]
@@ -111,6 +113,8 @@ def compare_candidates(primary: dict, alternate: dict, segments: list[dict]) -> 
             type(a) is not int
             or type(b) is not int
             or not 0 <= a < b <= len(text)
+            or not isinstance(sid, str)
+            or not sid
             or sid in ids
         ):
             raise ValueError("Invalid or duplicate candidate segment")
