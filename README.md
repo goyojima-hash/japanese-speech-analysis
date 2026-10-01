@@ -595,6 +595,52 @@ b1_001,/Users/naoki/Desktop/B1_001.mp3,B1,○,
 
 ## トラブルシューティング
 
+### 発話行為の観測と基準変換を別々に検証する
+
+保存済みの確認済み回答と観測JSONを使う、独立したオフライン検証ツールです。
+通常の５モジュール・API・対話ターミナル・CEFR判定経路は変更しません。
+モデル呼出しや音声送信はありません。
+
+```bash
+.venv/bin/python -m jgrade_eval.task_assessment_replay cases.json \
+  --rubric rubric-v1.json --rubric rubric-v2.json --output replay-report.json
+```
+
+正解・基準なしの合成データで動作だけを確認する例（精度検証ではありません）：
+
+```bash
+.venv/bin/python -m jgrade_eval.task_assessment_replay \
+  docs/examples/task-replay-unlabeled.json --output outputs/task-replay-smoke.json
+```
+
+`--rubric` は省略可能・複数指定可能です。同じrubric_idの異なる版を、
+同じ観測に適用できます。基準ファイルは既存 `TaskRubric` 形式ですが、
+ここで読み込んでも通常運用のレジストリには登録されません。
+正式な基準を新たに定義するツールではありません。
+
+入力の最上位は `{"cases": [...]}`。各ケースに以下を含めます。
+
+- `case_id`：一意な検証ケースID。
+- `transcript` / `duration_sec`：共有文字起こしと音声長。
+- `task_context`：既存形式の設問と確認済み回答対応。
+- `observations`：設問IDをキーとする保存済み `task-observation.v1`。
+- `labels`（任意）：設問IDごとに `observation` と `rating` を独立指定。
+  例：`{"p1": {"observation": {"act_type": "request"}, "rating": "○"}}`。
+  観測ラベルには `act_type`、`target`、`features` の非空部分集合を使えます。
+
+`observation_metrics` は観測ラベルとの一致、`rubric_runs[].metrics` は
+各基準版の達成度ラベルとの一致です。いずれも正解付き全件を分母にし、
+欠落・失敗・判定不能を除外しません。予測できた件数 `predicted` も別に表示します。
+正解なしなら `accuracy` は `null`。観測はモデル推論であり、引用照合は意味の正しさを
+保証しません。達成度一致率には観測の誤りも影響します。基準変換だけを検証する場合は、
+人が内容を確認した観測を入力して別実行してください。
+
+入力と基準のハッシュ・モデル来歴・基準版・設問別の判定不能理由を出力します。
+入力／基準ファイルを出力先にする操作は禁止です。ラベルは同じ設問・回答単位の
+確認済み正解だけを使い、録音全体の従来task_ratingは流用しないでください。
+文字起こしを含むレポートの個人情報管理にも注意してください。
+設計・制約は [検証ツールの設計](docs/task-assessment-replay-design.ja.md) を参照。
+
 ### `torchaudio.load` でエラーが出る
 
 torchaudio 2.11以降はFFmpegが必要です。このプロジェクトでは `librosa` で代替しているため問題ありません。
