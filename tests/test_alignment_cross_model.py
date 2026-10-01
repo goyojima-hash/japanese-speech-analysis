@@ -40,7 +40,7 @@ class CrossModelTests(unittest.TestCase):
             compare_candidates(
                 prediction(),
                 alternate(),
-                [dict(segment_id="", start_offset=0, end_offset=1)],
+                [{"segment_id": "", "start_offset": 0, "end_offset": 1}],
             )
 
     def test_loader_pins_revision_and_disables_remote_code(self):
@@ -63,7 +63,7 @@ class CrossModelTests(unittest.TestCase):
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
-            model, processor, device = load_comparison_model()
+            model, _processor, device = load_comparison_model()
         self.assertIs(model, fake)
         self.assertEqual(device, "cpu")
         self.assertEqual(load.call_args.kwargs["revision"], MODEL_REVISION)
@@ -75,8 +75,8 @@ class CrossModelTests(unittest.TestCase):
         alt = alternate()
         alt["alignment"]["units"][1]["end_sec"] = 0.9
         segments = [
-            dict(segment_id="small", start_offset=0, end_offset=1),
-            dict(segment_id="large", start_offset=1, end_offset=2),
+            {"segment_id": "small", "start_offset": 0, "end_offset": 1},
+            {"segment_id": "large", "start_offset": 1, "end_offset": 2},
         ]
         report = compare_candidates(prediction(), alt, segments)
         self.assertEqual(report["items"][0]["segment_id"], "large")
