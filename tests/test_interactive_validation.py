@@ -19,6 +19,23 @@ CONTEXT = {"prompts": [{"prompt_id": "q1", "text": "注文してください。"
 
 
 class InteractiveValidationTests(unittest.TestCase):
+    def test_validation_scope_is_shown_before_opt_in_question(self):
+        output = io.StringIO()
+
+        def answer(message):
+            rendered = output.getvalue()
+            for description in [
+                "発話行為の観測:", "引用が回答テキストと一致するか",
+                "項目別基準による変換:", "適用ルールと基準版",
+                "基準未登録なら観測のみ", "人手正解がない段階では精度を算出しません",
+            ]:
+                self.assertIn(description, rendered)
+            self.assertIn("[y/N]", message)
+            return ""
+
+        with patch("builtins.input", side_effect=answer), redirect_stdout(output):
+            self.assertFalse(prompt_validation_mode())
+
     def test_invalid_context_is_separate_validation_failure(self):
         with redirect_stdout(io.StringIO()):
             result = run_validation(
