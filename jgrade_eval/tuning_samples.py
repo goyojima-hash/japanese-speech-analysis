@@ -111,6 +111,7 @@ def _upsert_item(items: list[dict[str, Any]], item: dict[str, Any]) -> list[dict
 
 def _prediction_snapshot(record: dict[str, Any], *, source: str) -> dict[str, Any]:
     return {
+        **({"task_validation": record["task_validation"]} if "task_validation" in record else {}),
         "recorded_at": _now_iso(),
         "source": source,
         "status": str(record.get("status") or "ok"),

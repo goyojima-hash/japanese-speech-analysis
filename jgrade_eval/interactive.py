@@ -17,6 +17,7 @@ from .evidence import (
 )
 from .evidence.speech import objective_data_from_evidence
 from .fact_modules import INTERACTIVE_FACT_MODULES, run_fact_modules
+from .interactive_validation import prompt_validation_mode, run_validation
 from .live_judges import (
     PROVIDER_KEY_ENVS,
     PROVIDER_MODEL_OPTIONS,
@@ -61,6 +62,7 @@ def run_interactive(
     review_store_path: Path | None = DEFAULT_REVIEW_DATASET_PATH,
 ) -> None:
     selected_modules = prompt_fact_module_selection()
+    validation_enabled = prompt_validation_mode()
     judge_mode, provider_specs = prompt_judge_setup(judge_mode, provider_specs or [])
     audio_path = prompt_audio_choice(list_audio_files(audio_dir))
 
@@ -190,6 +192,16 @@ def run_interactive(
         calibration_applied=deliberation.applied_calibration,
         deliberation=deliberation,
     )
+    validation = run_validation(
+        enabled=validation_enabled,
+        objective_data=objective_data,
+        interaction_context=interaction_context,
+        judge_mode=judge_mode,
+        provider_specs=provider_specs or [],
+        timeout_sec=timeout_sec,
+    )
+    if validation is not None:
+        record["task_validation"] = validation
     if review_store_path:
         append_judged_sample(review_store_path, record=record, source="interactive")
         print(f"判定履歴を保存しました: {review_store_path}")
