@@ -142,7 +142,8 @@ def evaluate_sample(reference: dict, prediction: dict) -> dict:
                   and reference["sample_id"] == prediction["sample_id"]
                   and reference["duration_sec"] == prediction["source"]["duration_sec"])
     methods = {}
-    for name, method in prediction["methods"].items():
+    for name in sorted(set(prediction["methods"]) | {"ctc_argmax", "ctc_viterbi"}):
+        method = prediction["methods"].get(name, {})
         scored, abstentions = [], []
         for segment in eligible:
             span, reason = _span(method, segment, reference["transcript_hiragana"],

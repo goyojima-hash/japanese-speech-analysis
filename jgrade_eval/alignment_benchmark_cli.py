@@ -101,6 +101,8 @@ def evaluate(directory: Path) -> dict:
     manifest = _read_local(directory, "manifest.json")
     if manifest.get("schema_version") != "alignment-dataset.v1" or manifest.get("status") != "complete":
         raise ValueError("A complete supported capture manifest is required")
+    if not manifest.get("samples"):
+        raise ValueError("A benchmark requires at least one recording")
     results, hashes = [], set()
     for sample in manifest["samples"]:
         prediction = _read_local(directory, sample["prediction"])
@@ -121,8 +123,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     prep.add_argument("--output-dir", required=True, type=Path)
     evaluation = commands.add_parser("evaluate", help="Measure only human-reviewed references")
     evaluation.add_argument("dataset_dir", type=Path)
+    evaluation.add_argument("--report", type=Path, help="Save a new JSON report (never overwrite)")
     args = parser.parse_args(argv)
     report = prepare(args.audio_paths, args.output_dir) if args.command == "prepare" else evaluate(args.dataset_dir)
+    if args.command == "evaluate" and args.report is not None:
+        with args.report.open("x", encoding="utf-8") as target:
+            target.write(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
     print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
     return 0
 
