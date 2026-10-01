@@ -493,6 +493,22 @@ HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまた�
 
 発話行為の観測と項目別基準の変換を試す場合は、APIの `assessment_mode=shadow` またはターミナルの `evaluate-speech --assessment-mode shadow` を明示します。`task_context` の例は `{"prompts":[{"prompt_id":"q1","text":"予定について話してください"}],"whole_recording_answer_prompt_id":"q1"}` です。後者は「録音全体がこの設問の回答」と利用者が確認した場合だけ指定してください。ターミナルで単一設問なら、その文面を従来Judgeの設問にも渡します。確認済み回答なら基準未登録でも観測を返し、`rating` は保留します。JSONには従来の `task_rating` と別に `task_assessment_shadow` が入り、既存のCEFR推定は変えません。複数設問なら回答Transcript区間を確認して `answers` に明示する必要があります。`judge_mode=mock` では本物の発話観測を作らず、疎通確認のみです。詳細は [`docs/task-assessment-shadow-design.ja.md`](docs/task-assessment-shadow-design.ja.md) を参照してください。
 
+### 現在のUMLシーケンス図
+
+共通Evidenceから５モジュールの客観データを抽出し、その出力を通常Judgeへ渡します。
+Fluencyは共有音声事実の出力ビューであり、音声を再解析しません。
+並行検証は既定OFF。ON時だけ発話行為の観測と基準変換を別に記録し、通常CEFRは維持します。
+
+![共通層と５モジュール](docs/current-five-modules-sequence-20261001.png)
+
+![通常評価と任意の２段階検証](docs/current-shadow-validation-sequence-20261001.png)
+
+PNGは開いて拡大できます。編集可能なMermaidソース：
+[５モジュール](docs/current-five-modules-sequence-20261001.mmd)、
+[通常評価と並行検証](docs/current-shadow-validation-sequence-20261001.mmd)。
+
+### 対話ターミナルの検証ON/OFF
+
 対話式ターミナルにも「検証をONにしますか？ [y/N]」を追加しました。**EnterならOFF**で、
 起動するたびOFFから選び直します。OFF時は追加の観測AI呼出し・基準読込・検証記録を行いません。
 `y` / `yes` / `on` を入力したときだけ、通常の評価結果を表示した後に別枝で検証します。

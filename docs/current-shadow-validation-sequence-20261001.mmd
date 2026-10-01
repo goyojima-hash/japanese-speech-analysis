@@ -1,0 +1,50 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Hiragino Sans, Arial, sans-serif','fontSize':'18px','primaryTextColor':'#17212f','lineColor':'#334155','actorBkg':'#ffffff','actorBorder':'#475569','signalTextColor':'#17212f','noteBkgColor':'#fff7d6','noteTextColor':'#17212f'},'sequence':{'mirrorActors':false,'useMaxWidth':false,'actorMargin':28,'messageMargin':32,'boxMargin':14,'noteMargin':14,'width':190,'wrap':true}}}%%
+sequenceDiagram
+    autonumber
+    participant E as interactive.py<br/>api_service.py<br/>図①から客観データを受取
+    box rgb(225, 237, 255) 通常評価・既存結果を維持
+        participant J as live_judges.py<br/>mock_judges.py<br/>通常Judge
+        participant D as deliberation.py<br/>CEFR協議
+    end
+    box rgb(238, 242, 247) 任意検証の制御
+        participant V as interactive_validation.py<br/>APIはapi_service.py内<br/>shadow制御
+    end
+    box rgb(216, 238, 255) 段階１：発話行為観測・AI
+        participant O as task_observation.py<br/>引用付き観測・採点なし
+    end
+    box rgb(255, 237, 199) 段階２：基準変換・LLMなし
+        participant R as task_rubrics.py<br/>apply_rubric
+    end
+    box rgb(224, 245, 228) 結果・履歴
+        participant S as CLI：tuning_samples.py<br/>API：api_service.py<br/>履歴保存／結果返却
+    end
+    Note over E,V: 開始時に検証内容・追加費用・保存について表示<br/>「検証をONにしますか？ [y/N]」／EnterはOFF・起動ごとOFF<br/>API / evaluate-speechもassessment_modeの既定はoff
+    E->>J: 選択５軸の客観データ＋設問情報<br/>生音声は送らない
+    J-->>E: 従来JudgeのCEFR推定・task_rating
+    E->>D: 従来の協議・補正
+    D-->>E: 最終CEFR・確認フラグ
+    Note over E,D: 通常の結果を確定／対話CLIはここで表示
+    alt 検証OFF（既定）
+        Note over E,R: 追加の観測AI呼出し・基準読込・検証記録なし
+    else 検証ON
+        E->>V: 同じ文字起こし＋設問・回答対応<br/>通常結果は変更しない
+        Note over V,O: task_context.pyで回答対応を確認<br/>単一設問の録音全体対応も利用者が明示確認
+        alt 設問なし／回答対応未確認／mock
+            V-->>E: insufficient_context / mock_unavailable<br/>追加AI観測は行わず、理由を記録
+        else live・確認済み回答あり
+            V->>O: 設問＋確認済み回答テキスト<br/>最初のJudgeと同じprovider/model
+            Note right of O: 段階１：行為・対象・特徴を推定<br/>引用と回答テキストの一致を検証<br/>達成度・CEFRは出さない
+            O-->>V: TaskObservation／観測失敗
+            alt 有効観測＋項目別基準が登録済み
+                V->>R: 観測＋設問メタデータ＋版付き基準
+                Note right of R: 段階２：固定ルールで変換<br/>適用ルール・基準版を記録<br/>不一致・複数一致は保留
+                R-->>V: TaskAssessment／判定不能
+            else 基準未登録／観測失敗
+                Note over V,R: 基準なしなら観測だけ保持・ratingはnull<br/>失敗は別状態で記録し、通常CEFRは維持
+            end
+            V-->>E: 観測と基準変換を分けた検証結果
+        end
+    end
+    E->>S: 通常結果＋ON時だけ別の検証結果
+    Note over E,S: CLI：prediction_history内のtask_validationへ別保存（保存有効時）<br/>API / evaluate-speech：task_assessment_shadow等で別返却<br/>通常CEFR・人手正解は上書きしない
+    Note over V,R: 対話入力は設問文のみ：基準ID等がなければ観測だけ<br/>基準メタデータ・複数回答区間はAPI / evaluate-speechで明示可能<br/>後からtask_assessment_replay.pyで２段階を別検証／人手正解なしでは精度未測定

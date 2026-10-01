@@ -64,10 +64,12 @@ def run_interactive(
     selected_modules = prompt_fact_module_selection()
     validation_enabled = prompt_validation_mode()
     roleplay_task, interaction_context = prompt_interaction_context()
+    ordered_modules = ("fluency", "range", "accuracy", "coherence", "interaction")
+    total_steps = 1 + len(selected_modules) + 2
     judge_mode, provider_specs = prompt_judge_setup(judge_mode, provider_specs or [])
     audio_path = prompt_audio_choice(list_audio_files(audio_dir))
 
-    print("\n[1/7] 共通Evidence層: 音声から共有の文字起こし・時刻・トークンを抽出中...")
+    print(f"\n[1/{total_steps}] 共通Evidence層: 音声から共有の文字起こし・時刻・トークンを抽出中...")
     try:
         extractor = FluencyExtractor()
         evidence = EvidencePipeline(
@@ -82,14 +84,16 @@ def run_interactive(
         raise SystemExit(2) from exc
     print_common_evidence_data(evidence)
     if "fluency" in selected_modules:
-        print("\n[2/7] Fluencyモジュール: 共有Evidenceから流暢性の客観データを表示中...")
+        print(f"\n[2/{total_steps}] Fluencyモジュール: 共有Evidenceから流暢性の客観データを表示中...")
         print_fluency_data(objective_data)
 
-    module_steps = {"range": 3, "accuracy": 4, "coherence": 5, "interaction": 6}
+    module_steps = {module_id: index for index, module_id in enumerate(
+        (module_id for module_id in ordered_modules if module_id in selected_modules), start=2
+    )}
 
     def print_module_start(module_id: str) -> None:
         labels = {"range": "Range", "accuracy": "Accuracy", "coherence": "Coherence", "interaction": "Interaction"}
-        print(f"\n[{module_steps[module_id]}/7] {labels[module_id]}モジュール: 共有Evidenceから客観データを抽出中...")
+        print(f"\n[{module_steps[module_id]}/{total_steps}] {labels[module_id]}モジュール: 共有Evidenceから客観データを抽出中...")
 
     def print_module_result(module_id: str, packet: dict) -> None:
         if module_id == "range":
@@ -137,7 +141,7 @@ def run_interactive(
     roleplay_input = fact_modules.add_packets_to_roleplay_input(roleplay_input)
 
     judge_count = len(provider_specs) if judge_mode == "live" and provider_specs else 3
-    print(f"\n[6/7] {judge_count} JudgeでCEFRレベルを自動推定中...")
+    print(f"\n[{total_steps - 1}/{total_steps}] {judge_count} JudgeでCEFRレベルを自動推定中...")
     if judge_mode == "mock":
         auto_results = judge_auto_cefr_with_mock_panel(roleplay_input)
         judge_failures = []
@@ -167,7 +171,7 @@ def run_interactive(
 
     print_auto_level_judge_results(auto_results)
 
-    print("\n[7/7] CEFR協議を計算中...")
+    print(f"\n[{total_steps}/{total_steps}] CEFR協議を計算中...")
     deliberation = deliberate_auto_cefr(
         auto_results,
         objective_data=objective_data,
@@ -759,7 +763,7 @@ def prompt_fact_module_selection() -> frozenset[str]:
     ]
     print("\n=== 実行する客観モジュール ===")
     print("Enter: 5モジュールすべてを実行（推奨）")
-    print("不要なモジュールを外す場合は、使う番号をカンマ区切りで入力します。例: 1,2,4")
+    print("不要なモジュールを外す場合は、外す番号をカンマ区切りで入力します。例: 1,2,4")
     for number, (_, description) in enumerate(options, 1):
         print(f"  {number}. {description}")
     while True:
@@ -773,8 +777,8 @@ def prompt_fact_module_selection() -> frozenset[str]:
             numbers = {int(item.strip()) for item in raw.split(",") if item.strip()}
         except ValueError:
             numbers = set()
-        if numbers and all(1 <= number <= len(options) for number in numbers):
-            return frozenset(options[number - 1][0] for number in numbers)
+        if numbers and all(1 <= number <= len(options) for number in numbers) and len(numbers) < len(options):
+            return INTERACTIVE_FACT_MODULES - frozenset(options[number - 1][0] for number in numbers)
         print(f"1〜{len(options)} の番号をカンマ区切りで入力してください。")
 
 

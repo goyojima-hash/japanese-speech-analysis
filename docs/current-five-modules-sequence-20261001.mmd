@@ -1,0 +1,44 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Hiragino Sans, Arial, sans-serif','fontSize':'18px','primaryTextColor':'#17212f','lineColor':'#334155','actorBkg':'#ffffff','actorBorder':'#475569','signalTextColor':'#17212f','noteBkgColor':'#fff7d6','noteTextColor':'#17212f'},'sequence':{'mirrorActors':false,'useMaxWidth':false,'actorMargin':24,'messageMargin':32,'boxMargin':14,'noteMargin':14,'width':170,'wrap':true}}}%%
+sequenceDiagram
+    autonumber
+    participant E as interactive.py<br/>api_service.py<br/>通常実行の入口
+    box rgb(223, 246, 235) 共通Evidence層・LLMなし
+        participant P as evidence/pipeline.py<br/>EvidencePipeline
+    end
+    box rgb(235, 231, 255) ① Fluency・流暢さ
+        participant F as evidence/speech.py<br/>共有音声事実の出力
+    end
+    box rgb(237, 242, 248) 共通モジュール実行
+        participant M as fact_modules.py<br/>run_fact_modules
+    end
+    box rgb(225, 240, 255) ② Range・範囲
+        participant R as range.py<br/>RangeExtractor
+    end
+    box rgb(255, 233, 232) ③ Accuracy・正確さ
+        participant A as accuracy.py<br/>AccuracyModule
+    end
+    box rgb(245, 236, 255) ④ Coherence・まとまり
+        participant C as coherence.py<br/>CoherenceModule
+    end
+    box rgb(255, 243, 216) ⑤ Interaction・やりとり
+        participant I as interaction.py<br/>InteractionModule
+    end
+    Note over E,P: 音声＋任意の設問を入力／既定は５モジュール<br/>対話CLIでは不要な番号を指定して除外可能
+    E->>P: build(audio_path)・音声を１回解析
+    Note right of P: audio_pipeline.py：STT・VAD・モーラ時刻<br/>evidence/linguistic.py：Sudachi形態素解析<br/>LLMなし（音声認識等の学習モデルは使用）
+    P-->>E: EvidenceBundle v1<br/>文字起こし・音響時刻・形態素・来歴
+    E->>F: objective_data_from_evidence(speech)
+    F-->>E: fluency_metrics・ポーズ・モーラ時刻
+    Note over P,F: Fluencyは共有音声事実のビュー<br/>ここで音声を再解析しない
+    E->>M: 同じEvidence＋選択モジュール＋任意の設問情報
+    Note over M,I: 各モジュールは独立・相互に呼ばない<br/>客観的な観測データだけを出力し、採点しない
+    M->>R: LinguisticEvidence
+    R-->>M: range_data：語彙・TTR・JLPT分布
+    M->>A: EvidenceBundle
+    A-->>M: accuracy_data：形態素・ASR時刻の観測
+    M->>C: EvidenceBundle
+    C-->>M: coherence_data：接続表現・反復・候補単位
+    M->>I: EvidenceBundle＋任意の設問・回答区間
+    I-->>M: interaction_data：回答候補・対話表現・不足情報
+    M-->>E: 選択した事実パケットを返す
+    Note over E,M: Fluencyを含む客観データを通常Judgeへ渡す<br/>続きは図②：通常評価＋任意の並行検証

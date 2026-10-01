@@ -12,9 +12,9 @@ class InteractiveModuleSelectionTests(unittest.TestCase):
         with patch("builtins.input", return_value=""):
             self.assertEqual(prompt_fact_module_selection(), INTERACTIVE_FACT_MODULES)
 
-    def test_number_list_selects_only_requested_modules(self) -> None:
+    def test_number_list_excludes_requested_modules(self) -> None:
         with patch("builtins.input", return_value="1,3,5"):
-            self.assertEqual(prompt_fact_module_selection(), frozenset({"fluency", "accuracy", "interaction"}))
+            self.assertEqual(prompt_fact_module_selection(), frozenset({"range", "coherence"}))
 
 
 if __name__ == "__main__":
