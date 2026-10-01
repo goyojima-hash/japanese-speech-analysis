@@ -430,6 +430,15 @@ uv run python -m jgrade_eval evaluate-audio \
   --judge-providers anthropic:claude-sonnet-4-6,openai:gpt-5.4-mini,gemini:gemini-3.1-pro-preview \
   --output outputs/jgrade_live_report.json
 
+# HTTP APIと同じ評価サービスをターミナルから実行し、旧結果と試験結果を同じJSONに保存
+uv run python -m jgrade_eval evaluate-speech \
+  --audio audio/sample.mp3 \
+  --judge-mode live \
+  --judge-providers openai:your-model-id \
+  --assessment-mode shadow \
+  --task-context-file examples/task_context.json \
+  --output outputs/task_comparison.json
+
 # 対話式: 音声を選ぶ -> 客観データ表示 -> 1〜3 Judge CEFR推定 -> CEFR協議表示
 # 音声はファイル選択ダイアログ、パス入力、またはサンプル音声から選べます
 uv run python -m jgrade_eval interactive --judge-mode mock
@@ -477,12 +486,50 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/speech-level-evaluations \
 uv run python -m unittest discover -s tests
 ```
 
-対話式CLIではCEFRレベルやロールプレイ課題を人間が入力せず、客観データをもとに1〜3つのLLM Judgeが `A1`〜`C2` を推定し、多数決で最終CEFR推定を表示します。標準構成は3 Judgeですが、ローカル検証ではJudge 2/3をスキップできます。プロバイダは重複できません。
+対話式CLIではCEFRレベルを人間が入力せず、任意の設問と客観データをもとに1〜3つのLLM Judgeが `A1`〜`C2` を推定し、多数決で最終CEFR推定を表示します。標準構成は3 Judgeですが、ローカル検証ではJudge 2/3をスキップできます。プロバイダは重複できません。
 対話式CLIでは一部のJudge APIが失敗しても、少なくとも1つのJudgeが成功していれば、その成功分だけでCEFR集約を続行し、失敗したJudgeは警告として表示します。
 
 HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまたは `audio_url` を受け取り、`final_cefr_level`、`summary`、`reasons`、`objective_data`、`judge_results`、`needs_human_review` を返します。現在のローカルAPIは1リクエスト内で処理を完了して返すMVPです。将来の外部System統合では、同じレスポンス形を保ったまま非同期ジョブ化する想定です。
 
-`objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data` が入ります。通常のConsole／HTTP API実行はこの4モジュールすべてを既定で使います。RangeはSudachiPyの固定分割モードAと同梱JLPT語彙スナップショットを使い、トークン、TTR、JLPT分布、未知語、同音異義語候補を記録します。AccuracyとCoherenceも含め、各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
+発話行為の観測と項目別基準の変換を試す場合は、APIの `assessment_mode=shadow` またはターミナルの `evaluate-speech --assessment-mode shadow` を明示します。`task_context` の例は `{"prompts":[{"prompt_id":"q1","text":"予定について話してください"}],"whole_recording_answer_prompt_id":"q1"}` です。後者は「録音全体がこの設問の回答」と利用者が確認した場合だけ指定してください。ターミナルで単一設問なら、その文面を従来Judgeの設問にも渡します。確認済み回答なら基準未登録でも観測を返し、`rating` は保留します。JSONには従来の `task_rating` と別に `task_assessment_shadow` が入り、既存のCEFR推定は変えません。複数設問なら回答Transcript区間を確認して `answers` に明示する必要があります。`judge_mode=mock` では本物の発話観測を作らず、疎通確認のみです。詳細は [`docs/task-assessment-shadow-design.ja.md`](docs/task-assessment-shadow-design.ja.md) を参照してください。
+
+### 現在のUMLシーケンス図
+
+共通Evidenceから５モジュールの客観データを抽出し、その出力を通常Judgeへ渡します。
+Fluencyは共有音声事実の出力ビューであり、音声を再解析しません。
+並行検証は既定OFF。ON時だけ発話行為の観測と基準変換を別に記録し、通常CEFRは維持します。
+
+![共通層と５モジュール](docs/current-five-modules-sequence-20261001.png)
+
+![通常評価と任意の２段階検証](docs/current-shadow-validation-sequence-20261001.png)
+
+PNGは開いて拡大できます。編集可能なMermaidソース：
+[５モジュール](docs/current-five-modules-sequence-20261001.mmd)、
+[通常評価と並行検証](docs/current-shadow-validation-sequence-20261001.mmd)。
+
+### 対話ターミナルの検証ON/OFF
+
+対話式ターミナルにも「検証をONにしますか？ [y/N]」を追加しました。**EnterならOFF**で、
+起動するたびOFFから選び直します。OFF時は追加の観測AI呼出し・基準読込・検証記録を行いません。
+`y` / `yes` / `on` を入力したときだけ、通常の評価結果を表示した後に別枝で検証します。
+観測には通常Judgeで選択した最初のprovider/modelを使い、確認済み回答ごとに追加費用と
+最大20秒の呼出し待ちが発生し得ます。音声は送信しません。
+単一設問では「録音全体がその回答」と明示確認した場合だけ観測します。
+設問なし・未確認の複数設問は保留、mockは `mock_unavailable` です。
+対話入力は設問文のみのため、基準ID等がない場合は観測を残して `rubric_unavailable` とします。
+基準メタデータや複数回答区間を明示した検証は、上記のAPIまたは `evaluate-speech` で行えます。
+履歴保存が有効なら、文字起こし・回答対応・観測・基準版を
+`prediction_history[].task_validation` に別保存します。通常CEFRや人手正解を上書きしません。
+検証が失敗しても通常結果は維持します。履歴には個人情報を含む場合があるため、
+保存先とアクセス権に注意してください。結果の比較だけでは精度が確認されたことにはなりません。
+
+`objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data`、Interaction観測 `interaction_data` が入ります。通常のConsole／HTTP API実行はこの5モジュールすべてを既定で使います。Interactionは録音形態、VADポーズ由来の回答候補、設問の有無、対話表現候補、未提供能力を記録します。`interaction_context` に設問集合と確定済みの回答時刻区間を渡すと、それらを明示的な来歴として保存できます。各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
+
+共通Evidenceから、ひらがな文字起こしと既存CTC時刻列の保守的な対応候補 `transcript-alignment.v1` を派生できます。APIで客観データを返す場合は `objective_data` の形を変えず、同階層の `transcript_alignment` に対応状況と来歴を返します。Interactionの回答候補にも未確定の文字範囲候補を付けますが、設問と回答の対応を自動確定せず、この新しい候補は既存Judge入力へ渡しません。音響時刻の精度は未検証です。設計と検証記録は [`docs/transcript-alignment-design.ja.md`](docs/transcript-alignment-design.ja.md) と [`docs/transcript-alignment-tasks.ja.md`](docs/transcript-alignment-tasks.ja.md) を参照してください。
+
+音響時刻を改善できるかを試す独立コマンドもあります。`.venv/bin/python -m jgrade_eval.alignment_experiment audio/sample.mp3` は既存の日本語Wav2Vec2からCTC再整列候補をJSONで出します。人手修正したひらがなを使う場合は `--transcript-file transcript.txt` を付けます。この実験コマンドは通常の5モジュール・Judge経路を変更せず、`complete` も時刻精度や発話内容の保証ではありません。設計と残タスクは [`docs/forced-alignment-v2-design.ja.md`](docs/forced-alignment-v2-design.ja.md) を参照してください。
+
+従来時刻と再整列時刻を同じ推論結果で比較する検証コマンドは `python -m jgrade_eval.alignment_benchmark_cli prepare 音声ファイル --output-dir 新規保存先` です。人手確認用JSONを作成し、`evaluate 保存先`で人が確認した区間だけの時刻誤差・対応率を測ります。未確認の候補は正解扱いしません。[検証手順](docs/alignment-benchmark-guide.ja.md)を参照してください。
 
 自分で用意した複数音声をmanifestで試す場合は、`examples/jgrade_audio_manifest.json` と同じ形式で、候補者・試験レベル・ロールプレイごとの `audio_path`、タスク、JFS can-do基準、期待される情報を指定できます。`extract-objective` はこのリポジトリの `fluency.py` を使い、ひらがな文字起こし、発話率、ポーズ、モーラ速度、発話区間を出力します。`judge-mode mock` はAPIキーなしの疎通確認用で、正式なJFS判定ではありません。
 
@@ -577,6 +624,52 @@ b1_001,/Users/naoki/Desktop/B1_001.mp3,B1,○,
 ---
 
 ## トラブルシューティング
+
+### 発話行為の観測と基準変換を別々に検証する
+
+保存済みの確認済み回答と観測JSONを使う、独立したオフライン検証ツールです。
+通常の５モジュール・API・対話ターミナル・CEFR判定経路は変更しません。
+モデル呼出しや音声送信はありません。
+
+```bash
+.venv/bin/python -m jgrade_eval.task_assessment_replay cases.json \
+  --rubric rubric-v1.json --rubric rubric-v2.json --output replay-report.json
+```
+
+正解・基準なしの合成データで動作だけを確認する例（精度検証ではありません）：
+
+```bash
+.venv/bin/python -m jgrade_eval.task_assessment_replay \
+  docs/examples/task-replay-unlabeled.json --output outputs/task-replay-smoke.json
+```
+
+`--rubric` は省略可能・複数指定可能です。同じrubric_idの異なる版を、
+同じ観測に適用できます。基準ファイルは既存 `TaskRubric` 形式ですが、
+ここで読み込んでも通常運用のレジストリには登録されません。
+正式な基準を新たに定義するツールではありません。
+
+入力の最上位は `{"cases": [...]}`。各ケースに以下を含めます。
+
+- `case_id`：一意な検証ケースID。
+- `transcript` / `duration_sec`：共有文字起こしと音声長。
+- `task_context`：既存形式の設問と確認済み回答対応。
+- `observations`：設問IDをキーとする保存済み `task-observation.v1`。
+- `labels`（任意）：設問IDごとに `observation` と `rating` を独立指定。
+  例：`{"p1": {"observation": {"act_type": "request"}, "rating": "○"}}`。
+  観測ラベルには `act_type`、`target`、`features` の非空部分集合を使えます。
+
+`observation_metrics` は観測ラベルとの一致、`rubric_runs[].metrics` は
+各基準版の達成度ラベルとの一致です。いずれも正解付き全件を分母にし、
+欠落・失敗・判定不能を除外しません。予測できた件数 `predicted` も別に表示します。
+正解なしなら `accuracy` は `null`。観測はモデル推論であり、引用照合は意味の正しさを
+保証しません。達成度一致率には観測の誤りも影響します。基準変換だけを検証する場合は、
+人が内容を確認した観測を入力して別実行してください。
+
+入力と基準のハッシュ・モデル来歴・基準版・設問別の判定不能理由を出力します。
+入力／基準ファイルを出力先にする操作は禁止です。ラベルは同じ設問・回答単位の
+確認済み正解だけを使い、録音全体の従来task_ratingは流用しないでください。
+文字起こしを含むレポートの個人情報管理にも注意してください。
+設計・制約は [検証ツールの設計](docs/task-assessment-replay-design.ja.md) を参照。
 
 ### `torchaudio.load` でエラーが出る
 

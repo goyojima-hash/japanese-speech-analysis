@@ -1,0 +1,64 @@
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Entry as api.py / interactive.py<br/>共通入口
+    participant Context as assessment_context.py<br/>設問・録音文脈
+    box rgb(226, 247, 232) 共通前処理（1録音につき1回・LLMなし）
+        participant Evidence as evidence/pipeline.py<br/>EvidencePipeline
+        participant Segmenter as recording_segments.py<br/>RecordingSegmenter
+    end
+    participant Confirm as 確認・確定操作<br/>API / Console
+    participant Runner as fact_modules.py<br/>FactModuleRunner
+    box rgb(245, 241, 255) 5つの独立Fact Module（相互に呼ばない・LLMなし）
+        participant Fluency as fluency.py<br/>FluencyModule
+        participant Range as range.py<br/>RangeModule
+        participant Accuracy as accuracy.py<br/>AccuracyModule
+        participant Coherence as coherence.py<br/>CoherenceModule
+        participant Interaction as interaction.py<br/>InteractionModule
+    end
+    participant Judge as AI Judge + deliberation.py<br/>評価層
+
+    User->>Entry: 連続音声 + 設問集合（任意）<br/>録音モード・学習者話者（任意）
+    Entry->>Context: AssessmentContext を検証・保存
+    Entry->>Evidence: build(audio_path)
+    Evidence->>Evidence: STT・VAD・ポーズ・モーラ<br/>Sudachiトークン化（各1回）
+    Evidence-->>Entry: EvidenceBundle v1
+    Entry->>Segmenter: build_context(Evidence, AssessmentContext)
+    Segmenter->>Segmenter: 時刻付き発話チャンク<br/>話者ターン（利用可能時）<br/>保守的な回答候補
+    Segmenter-->>Context: 候補区間 + 境界根拠 + 未提供能力
+    Context-->>Entry: AssessmentEvidence<br/>候補はまだ評価しない
+    Entry-->>User: 候補・設問対応を表示
+    User->>Confirm: 区間を結合/分割し設問・学習者話者を確定
+    Confirm->>Context: confirmed_answer_segments を保存
+
+    alt 設問・回答区間が確定済み
+        Context-->>Runner: 回答View + 共通Evidence + Context
+        par Fluency
+            Runner->>Fluency: 読み取り専用の回答View
+            Fluency-->>Runner: fluency_data
+        and Range
+            Runner->>Range: 読み取り専用の回答View
+            Range-->>Runner: range_data
+        and Accuracy
+            Runner->>Accuracy: 読み取り専用の回答View
+            Accuracy-->>Runner: accuracy_data
+        and Coherence
+            Runner->>Coherence: 読み取り専用の回答View
+            Coherence-->>Runner: coherence_data
+        and Interaction
+            Runner->>Interaction: 回答View + 録音ターン観測
+            Interaction-->>Runner: interaction_data
+        end
+        Runner-->>Entry: 5つの客観Fact Packet
+        Entry->>Judge: 設問 + 回答Transcript + 共通Evidence<br/>+ 5 Fact Packet（生音声なし）
+        Judge-->>Entry: 設問単位CEFR推定・タスク達成度・協議結果
+        Entry-->>User: 結果・根拠・未提供能力
+    else 設問なし／区間未確定だが学習者発話を特定可能
+        Context-->>Runner: 学習者の録音全体View + 共通Evidence + Context
+        Runner-->>Entry: 5つの客観Fact Packet
+        Entry->>Judge: 学習者Transcript + 共通Evidence<br/>+ 5 Fact Packet（生音声なし）
+        Judge-->>Entry: 録音レベルの暫定CEFR推定<br/>task_rating=unavailable
+        Entry-->>User: 結果 + task_context_missing<br/>answer_mapping_unconfirmed
+    else 複数話者で学習者を特定不能
+        Entry-->>User: 客観候補を返す<br/>Judgeは実行しない
+    end

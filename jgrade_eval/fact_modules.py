@@ -8,10 +8,11 @@ from typing import Any, Callable, Iterable, Mapping
 from .accuracy import AccuracyModule
 from .coherence import CoherenceModule
 from .evidence.models import EvidenceBundle
+from .interaction import InteractionModule
 from .range import RangeExtractor
 
 
-SUPPORTED_FACT_MODULES = frozenset({"fluency", "range", "accuracy", "coherence"})
+SUPPORTED_FACT_MODULES = frozenset({"fluency", "range", "accuracy", "coherence", "interaction"})
 DEFAULT_FACT_MODULES = SUPPORTED_FACT_MODULES
 INTERACTIVE_FACT_MODULES = SUPPORTED_FACT_MODULES
 
@@ -27,7 +28,17 @@ class FactModuleRun:
         return {**base_data, **self.packets}
 
     def add_packets_to_roleplay_input(self, base_input: Mapping[str, Any]) -> dict[str, Any]:
-        return {**base_input, **self.packets}
+        packets = dict(self.packets)
+        interaction = packets.get("interaction_data")
+        if interaction is not None:
+            segments = [
+                {key: value for key, value in segment.items()
+                 if key not in {"start_offset", "end_offset", "transcript_text", "alignment_status"}}
+                if "alignment_status" in segment else segment
+                for segment in interaction["candidate_answer_segments"]
+            ]
+            packets["interaction_data"] = {**interaction, "candidate_answer_segments": segments}
+        return {**base_input, **packets}
 
 
 def run_fact_modules(
@@ -35,6 +46,8 @@ def run_fact_modules(
     *,
     selected_modules: Iterable[str] | None = None,
     range_extractor: RangeExtractor | None = None,
+    prompt_text: str | None = None,
+    interaction_context: Mapping[str, Any] | None = None,
     on_module_start: Callable[[str], None] | None = None,
     on_module_result: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> FactModuleRun:
@@ -60,6 +73,12 @@ def run_fact_modules(
         _notify_start(on_module_start, "coherence")
         packets["coherence_data"] = CoherenceModule().collect(evidence).to_dict()
         _notify_result(on_module_result, "coherence", packets["coherence_data"])
+    if "interaction" in active_modules:
+        _notify_start(on_module_start, "interaction")
+        packets["interaction_data"] = InteractionModule().collect(
+            evidence, prompt_text=prompt_text, interaction_context=interaction_context
+        ).to_dict()
+        _notify_result(on_module_result, "interaction", packets["interaction_data"])
     return FactModuleRun(active_modules=active_modules, packets=packets)
 
 

@@ -9,6 +9,7 @@ from uuid import uuid4
 from .audio_pipeline import FluencyExtractor
 from .deliberation import deliberate_auto_cefr
 from .evidence import EvidencePipeline, FluencySpeechEvidenceExtractor, LinguisticEvidenceExtractor
+from .evidence.alignment import build_transcript_alignment
 from .evidence.speech import objective_data_from_evidence
 from .fact_modules import DEFAULT_FACT_MODULES, SUPPORTED_FACT_MODULES, run_fact_modules
 from .live_judges import (
@@ -19,6 +20,10 @@ from .live_judges import (
 from .mock_judges import judge_auto_cefr_with_mock_panel
 from .models import AutoLevelJudgeResult, Rating
 from .range import RangeExtractor
+from .task_assessment import assess_shadow_task, assess_shadow_tasks
+from .task_context import TaskContext
+from .task_observation import observe_task_with_provider
+from .task_rubrics import TaskAssessment, TaskRubric, load_default_task_rubrics
 from .tuning_profile import TuningProfile, compose_auto_cefr_system_prompt
 
 
@@ -46,6 +51,10 @@ def evaluate_speech_level(
     range_extractor: RangeExtractor | None = None,
     evidence_pipeline: EvidencePipeline | None = None,
     selected_modules: Iterable[str] | None = None,
+    interaction_context: dict[str, Any] | None = None,
+    task_context: dict[str, Any] | None = None,
+    assessment_mode: str = "off",
+    task_rubrics: dict[str, TaskRubric] | None = None,
 ) -> dict[str, Any]:
     """Evaluate one speech file and return an API-shaped completed result."""
 
@@ -53,6 +62,8 @@ def evaluate_speech_level(
         raise ValueError("language must be 'ja'.")
     if judge_mode not in {"mock", "live"}:
         raise ValueError("judge_mode must be 'mock' or 'live'.")
+    if assessment_mode not in {"off", "shadow"}:
+        raise ValueError("assessment_mode must be 'off' or 'shadow'.")
     if judge_mode == "live" and not provider_specs:
         raise ValueError("live judge_mode requires 1 to 3 judge providers.")
 
@@ -67,6 +78,8 @@ def evaluate_speech_level(
         evidence,
         selected_modules=selected_modules,
         range_extractor=range_extractor,
+        prompt_text=roleplay_task,
+        interaction_context=interaction_context,
     )
     active_modules = fact_modules.active_modules
     objective_data = fact_modules.merge_objective_data(
@@ -155,6 +168,47 @@ def evaluate_speech_level(
     }
     if include_objective_data:
         payload["objective_data"] = _public_objective_data(objective_data)
+        payload["transcript_alignment"] = build_transcript_alignment(evidence.speech).to_dict()
+    if assessment_mode == "shadow":
+        context = TaskContext.from_inputs(
+            roleplay_task=roleplay_task,
+            interaction_context=interaction_context,
+            task_context=task_context,
+            transcript=evidence.speech.raw_transcript_hiragana,
+            duration_sec=evidence.speech.duration_sec,
+        )
+        if judge_mode == "mock":
+            shadows = tuple(TaskAssessment(
+                status="mock_unavailable", prompt_id=prompt.prompt_id,
+                reason="mock Judge is not a speech-act model",
+            ) for prompt in context.prompts)
+            if not shadows:
+                shadows = (TaskAssessment(status="insufficient_context", reason="no prompt"),)
+        else:
+            spec = (provider_specs or [])[0]
+            registry_failure = None
+            try:
+                available_rubrics = task_rubrics if task_rubrics is not None else load_default_task_rubrics()
+            except Exception as exc:
+                registry_failure = type(exc).__name__
+                available_rubrics = {}
+            observe = lambda prompt, answer: observe_task_with_provider(
+                prompt, answer, spec, timeout_sec=min(timeout_sec, 20.0),
+            )
+            shadows = (assess_shadow_task(context, available_rubrics, observe=observe),)
+            if len(context.prompts) > 1:
+                shadows = assess_shadow_tasks(context, available_rubrics, observe=observe)
+            if registry_failure is not None:
+                shadows = tuple(
+                    TaskAssessment(status="rubric_registry_failed", prompt_id=item.prompt_id,
+                                   observation=item.observation, reason=registry_failure)
+                    if item.status == "rubric_unavailable" else item
+                    for item in shadows
+                )
+        if len(context.prompts) > 1:
+            payload["task_assessments_shadow"] = [item.to_dict() for item in shadows]
+        else:
+            payload["task_assessment_shadow"] = shadows[0].to_dict()
     return payload
 
 

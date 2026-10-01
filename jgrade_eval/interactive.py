@@ -17,6 +17,7 @@ from .evidence import (
 )
 from .evidence.speech import objective_data_from_evidence
 from .fact_modules import INTERACTIVE_FACT_MODULES, run_fact_modules
+from .interactive_validation import prompt_validation_mode, run_validation
 from .live_judges import (
     PROVIDER_KEY_ENVS,
     PROVIDER_MODEL_OPTIONS,
@@ -60,10 +61,15 @@ def run_interactive(
     profile_path: Path | None = None,
     review_store_path: Path | None = DEFAULT_REVIEW_DATASET_PATH,
 ) -> None:
+    selected_modules = prompt_fact_module_selection()
+    validation_enabled = prompt_validation_mode()
+    roleplay_task, interaction_context = prompt_interaction_context()
+    ordered_modules = ("fluency", "range", "accuracy", "coherence", "interaction")
+    total_steps = 1 + len(selected_modules) + 2
     judge_mode, provider_specs = prompt_judge_setup(judge_mode, provider_specs or [])
     audio_path = prompt_audio_choice(list_audio_files(audio_dir))
 
-    print("\n[1/7] 共通Evidence層: 音声から共有の文字起こし・時刻・トークンを抽出中...")
+    print(f"\n[1/{total_steps}] 共通Evidence層: 音声から共有の文字起こし・時刻・トークンを抽出中...")
     try:
         extractor = FluencyExtractor()
         evidence = EvidencePipeline(
@@ -77,14 +83,17 @@ def run_interactive(
         print(str(exc))
         raise SystemExit(2) from exc
     print_common_evidence_data(evidence)
-    print("\n[2/7] Fluencyモジュール: 共有Evidenceから流暢性の客観データを表示中...")
-    print_fluency_data(objective_data)
+    if "fluency" in selected_modules:
+        print(f"\n[2/{total_steps}] Fluencyモジュール: 共有Evidenceから流暢性の客観データを表示中...")
+        print_fluency_data(objective_data)
 
-    module_steps = {"range": 3, "accuracy": 4, "coherence": 5}
+    module_steps = {module_id: index for index, module_id in enumerate(
+        (module_id for module_id in ordered_modules if module_id in selected_modules), start=2
+    )}
 
     def print_module_start(module_id: str) -> None:
-        labels = {"range": "Range", "accuracy": "Accuracy", "coherence": "Coherence"}
-        print(f"\n[{module_steps[module_id]}/7] {labels[module_id]}モジュール: 共有Evidenceから客観データを抽出中...")
+        labels = {"range": "Range", "accuracy": "Accuracy", "coherence": "Coherence", "interaction": "Interaction"}
+        print(f"\n[{module_steps[module_id]}/{total_steps}] {labels[module_id]}モジュール: 共有Evidenceから客観データを抽出中...")
 
     def print_module_result(module_id: str, packet: dict) -> None:
         if module_id == "range":
@@ -93,11 +102,15 @@ def run_interactive(
             print_accuracy_data(packet)
         elif module_id == "coherence":
             print_coherence_data(packet)
+        elif module_id == "interaction":
+            print_interaction_data(packet)
 
     try:
         fact_modules = run_fact_modules(
             evidence,
-            selected_modules=INTERACTIVE_FACT_MODULES,
+            selected_modules=selected_modules,
+            prompt_text=roleplay_task,
+            interaction_context=interaction_context,
             on_module_start=print_module_start,
             on_module_result=print_module_result,
         )
@@ -118,17 +131,17 @@ def run_interactive(
         "sample_id": review_sample_id,
         "target_cefr_level": "auto",
         "roleplay_id": "rp-1",
-        "roleplay_task": "不明",
+        "roleplay_task": roleplay_task,
         "jfs_can_do_criteria": [],
         "raw_transcript_hiragana": objective_data["raw_transcript_hiragana"],
-        "fluency_metrics": objective_data["fluency_metrics"],
+        "fluency_metrics": objective_data["fluency_metrics"] if "fluency" in selected_modules else {},
         "speaker_metadata": {},
         "optional_expected_information": [],
     }
     roleplay_input = fact_modules.add_packets_to_roleplay_input(roleplay_input)
 
     judge_count = len(provider_specs) if judge_mode == "live" and provider_specs else 3
-    print(f"\n[6/7] {judge_count} JudgeでCEFRレベルを自動推定中...")
+    print(f"\n[{total_steps - 1}/{total_steps}] {judge_count} JudgeでCEFRレベルを自動推定中...")
     if judge_mode == "mock":
         auto_results = judge_auto_cefr_with_mock_panel(roleplay_input)
         judge_failures = []
@@ -158,7 +171,7 @@ def run_interactive(
 
     print_auto_level_judge_results(auto_results)
 
-    print("\n[7/7] CEFR協議を計算中...")
+    print(f"\n[{total_steps}/{total_steps}] CEFR協議を計算中...")
     deliberation = deliberate_auto_cefr(
         auto_results,
         objective_data=objective_data,
@@ -186,6 +199,16 @@ def run_interactive(
         calibration_applied=deliberation.applied_calibration,
         deliberation=deliberation,
     )
+    validation = run_validation(
+        enabled=validation_enabled,
+        objective_data=objective_data,
+        interaction_context=interaction_context,
+        judge_mode=judge_mode,
+        provider_specs=provider_specs or [],
+        timeout_sec=timeout_sec,
+    )
+    if validation is not None:
+        record["task_validation"] = validation
     if review_store_path:
         append_judged_sample(review_store_path, record=record, source="interactive")
         print(f"判定履歴を保存しました: {review_store_path}")
@@ -730,6 +753,55 @@ def print_objective_data(objective_data: dict) -> None:
     print("注: Coherenceモジュールは観測事実のみを出力します。候補境界や反復は品質・正誤・レベルの判定ではありません。")
 
 
+def prompt_fact_module_selection() -> frozenset[str]:
+    options = [
+        ("fluency", "Fluency（流暢さ）: 発話速度、ポーズ、発話率、モーラ時刻"),
+        ("range", "Range（範囲）: 語彙の種類、TTR、JLPT語彙分布、未知語候補"),
+        ("accuracy", "Accuracy（正確さ）: 文法・語法の観測事実（正誤は判定しない）"),
+        ("coherence", "Coherence（まとまり）: 接続表現、候補談話単位、語彙反復、ポーズ"),
+        ("interaction", "Interaction（やりとり）: 設問と解答があると根拠が増える。設問なしでは録音全体の観測のみ"),
+    ]
+    print("\n=== 実行する客観モジュール ===")
+    print("Enter: 5モジュールすべてを実行（推奨）")
+    print("不要なモジュールを外す場合は、外す番号をカンマ区切りで入力します。例: 1,2,4")
+    for number, (_, description) in enumerate(options, 1):
+        print(f"  {number}. {description}")
+    while True:
+        try:
+            raw = input("番号 [Enter=すべて]: ").strip()
+        except EOFError:
+            return INTERACTIVE_FACT_MODULES
+        if not raw:
+            return INTERACTIVE_FACT_MODULES
+        try:
+            numbers = {int(item.strip()) for item in raw.split(",") if item.strip()}
+        except ValueError:
+            numbers = set()
+        if numbers and all(1 <= number <= len(options) for number in numbers) and len(numbers) < len(options):
+            return INTERACTIVE_FACT_MODULES - frozenset(options[number - 1][0] for number in numbers)
+        print(f"1〜{len(options)} の番号をカンマ区切りで入力してください。")
+
+
+def prompt_interaction_context() -> tuple[str, dict[str, object]]:
+    print("\n=== 設問（任意） ===")
+    print("設問がある場合は1行ずつ入力してください。空行で終了します。")
+    print("設問がない場合は、そのままEnterを押してください。")
+    prompts: list[dict[str, object]] = []
+    while True:
+        try:
+            text = input(f"設問 {len(prompts) + 1}: ").strip()
+        except EOFError:
+            break
+        if not text:
+            break
+        prompts.append({"prompt_id": f"q{len(prompts) + 1}", "text": text, "display_order": len(prompts) + 1})
+    if not prompts:
+        return "不明", {}
+    if len(prompts) == 1:
+        return str(prompts[0]["text"]), {"recording_mode": "monologue", "prompts": prompts}
+    return "複数の設問に対する連続回答", {"recording_mode": "monologue", "prompts": prompts}
+
+
 def print_fluency_data(objective_data: dict) -> None:
     metrics = objective_data["fluency_metrics"]
     transcript = objective_data["raw_transcript_hiragana"]
@@ -812,6 +884,19 @@ def print_coherence_data(coherence_data: dict) -> None:
     if unavailable_capabilities:
         print(f"未提供の能力: {', '.join(str(item) for item in unavailable_capabilities)}")
     print("注: Coherenceモジュールは観測事実のみを出力します。候補境界や反復は品質・正誤・レベルの判定ではありません。")
+
+
+def print_interaction_data(interaction_data: dict) -> None:
+    observation = interaction_data.get("recording_observation", {})
+    print("\n=== Interaction客観データ ===")
+    print("生成元: Interactionモジュール（共有Evidence、LLM不使用）")
+    print(f"録音形態: {observation.get('recording_mode', 'unknown')} / 検出話者数: {observation.get('detected_speaker_count', 'unknown')}")
+    print(f"設問あり: {observation.get('prompt_available', False)} / 回答候補: {len(interaction_data.get('candidate_answer_segments', []))}件")
+    print(f"対話表現候補: {len(interaction_data.get('interaction_marker_candidates', []))}件")
+    unavailable = interaction_data.get("unavailable_capabilities", [])
+    if unavailable:
+        print(f"未提供の能力: {', '.join(str(item) for item in unavailable)}")
+    print("注: 設問と解答区間があると根拠が増えます。話者ターン等は対応する共通前処理の追加後に取得します。")
 
 
 def print_judge_results(judge_results: list[JudgeResult]) -> None:
