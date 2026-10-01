@@ -493,6 +493,20 @@ HTTP APIは `POST /api/v1/speech-level-evaluations` で音声ファイルまた�
 
 発話行為の観測と項目別基準の変換を試す場合は、APIの `assessment_mode=shadow` またはターミナルの `evaluate-speech --assessment-mode shadow` を明示します。`task_context` の例は `{"prompts":[{"prompt_id":"q1","text":"予定について話してください"}],"whole_recording_answer_prompt_id":"q1"}` です。後者は「録音全体がこの設問の回答」と利用者が確認した場合だけ指定してください。ターミナルで単一設問なら、その文面を従来Judgeの設問にも渡します。確認済み回答なら基準未登録でも観測を返し、`rating` は保留します。JSONには従来の `task_rating` と別に `task_assessment_shadow` が入り、既存のCEFR推定は変えません。複数設問なら回答Transcript区間を確認して `answers` に明示する必要があります。`judge_mode=mock` では本物の発話観測を作らず、疎通確認のみです。詳細は [`docs/task-assessment-shadow-design.ja.md`](docs/task-assessment-shadow-design.ja.md) を参照してください。
 
+対話式ターミナルにも「検証をONにしますか？ [y/N]」を追加しました。**EnterならOFF**で、
+起動するたびOFFから選び直します。OFF時は追加の観測AI呼出し・基準読込・検証記録を行いません。
+`y` / `yes` / `on` を入力したときだけ、通常の評価結果を表示した後に別枝で検証します。
+観測には通常Judgeで選択した最初のprovider/modelを使い、確認済み回答ごとに追加費用と
+最大20秒の呼出し待ちが発生し得ます。音声は送信しません。
+単一設問では「録音全体がその回答」と明示確認した場合だけ観測します。
+設問なし・未確認の複数設問は保留、mockは `mock_unavailable` です。
+対話入力は設問文のみのため、基準ID等がない場合は観測を残して `rubric_unavailable` とします。
+基準メタデータや複数回答区間を明示した検証は、上記のAPIまたは `evaluate-speech` で行えます。
+履歴保存が有効なら、文字起こし・回答対応・観測・基準版を
+`prediction_history[].task_validation` に別保存します。通常CEFRや人手正解を上書きしません。
+検証が失敗しても通常結果は維持します。履歴には個人情報を含む場合があるため、
+保存先とアクセス権に注意してください。結果の比較だけでは精度が確認されたことにはなりません。
+
 `objective_data` には、Fluencyのひらがな文字起こし・タイミング指標、非LLMの語彙Range根拠 `range_data`、Accuracy観測 `accuracy_data`、Coherence観測 `coherence_data`、Interaction観測 `interaction_data` が入ります。通常のConsole／HTTP API実行はこの5モジュールすべてを既定で使います。Interactionは録音形態、VADポーズ由来の回答候補、設問の有無、対話表現候補、未提供能力を記録します。`interaction_context` に設問集合と確定済みの回答時刻区間を渡すと、それらを明示的な来歴として保存できます。各モジュールは事実のみを出力し、最終CEFRを決定しません。辞書の出典と上書き仕様は [`docs/range-module-design.md`](docs/range-module-design.md) を参照してください。
 
 共通Evidenceから、ひらがな文字起こしと既存CTC時刻列の保守的な対応候補 `transcript-alignment.v1` を派生できます。APIで客観データを返す場合は `objective_data` の形を変えず、同階層の `transcript_alignment` に対応状況と来歴を返します。Interactionの回答候補にも未確定の文字範囲候補を付けますが、設問と回答の対応を自動確定せず、この新しい候補は既存Judge入力へ渡しません。音響時刻の精度は未検証です。設計と検証記録は [`docs/transcript-alignment-design.ja.md`](docs/transcript-alignment-design.ja.md) と [`docs/transcript-alignment-tasks.ja.md`](docs/transcript-alignment-tasks.ja.md) を参照してください。

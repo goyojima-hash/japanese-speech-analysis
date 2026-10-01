@@ -63,6 +63,7 @@ def run_interactive(
 ) -> None:
     selected_modules = prompt_fact_module_selection()
     validation_enabled = prompt_validation_mode()
+    roleplay_task, interaction_context = prompt_interaction_context()
     judge_mode, provider_specs = prompt_judge_setup(judge_mode, provider_specs or [])
     audio_path = prompt_audio_choice(list_audio_files(audio_dir))
 
@@ -104,6 +105,8 @@ def run_interactive(
         fact_modules = run_fact_modules(
             evidence,
             selected_modules=selected_modules,
+            prompt_text=roleplay_task,
+            interaction_context=interaction_context,
             on_module_start=print_module_start,
             on_module_result=print_module_result,
         )
@@ -124,7 +127,7 @@ def run_interactive(
         "sample_id": review_sample_id,
         "target_cefr_level": "auto",
         "roleplay_id": "rp-1",
-        "roleplay_task": "不明",
+        "roleplay_task": roleplay_task,
         "jfs_can_do_criteria": [],
         "raw_transcript_hiragana": objective_data["raw_transcript_hiragana"],
         "fluency_metrics": objective_data["fluency_metrics"] if "fluency" in selected_modules else {},
@@ -773,6 +776,26 @@ def prompt_fact_module_selection() -> frozenset[str]:
         if numbers and all(1 <= number <= len(options) for number in numbers):
             return frozenset(options[number - 1][0] for number in numbers)
         print(f"1〜{len(options)} の番号をカンマ区切りで入力してください。")
+
+
+def prompt_interaction_context() -> tuple[str, dict[str, object]]:
+    print("\n=== 設問（任意） ===")
+    print("設問がある場合は1行ずつ入力してください。空行で終了します。")
+    print("設問がない場合は、そのままEnterを押してください。")
+    prompts: list[dict[str, object]] = []
+    while True:
+        try:
+            text = input(f"設問 {len(prompts) + 1}: ").strip()
+        except EOFError:
+            break
+        if not text:
+            break
+        prompts.append({"prompt_id": f"q{len(prompts) + 1}", "text": text, "display_order": len(prompts) + 1})
+    if not prompts:
+        return "不明", {}
+    if len(prompts) == 1:
+        return str(prompts[0]["text"]), {"recording_mode": "monologue", "prompts": prompts}
+    return "複数の設問に対する連続回答", {"recording_mode": "monologue", "prompts": prompts}
 
 
 def print_fluency_data(objective_data: dict) -> None:
