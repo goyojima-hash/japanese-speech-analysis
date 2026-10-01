@@ -30,6 +30,42 @@ def alternate():
 
 
 class CrossModelTests(unittest.TestCase):
+    def test_invalid_source_duration_and_candidate_id_rejected(self):
+        for duration in (float('nan'), 0, True):
+            p, alt = prediction(), alternate()
+            p['source']['duration_sec'] = alt['source']['duration_sec'] = duration
+            with self.assertRaises(ValueError):
+                compare_candidates(p,alt,[])
+        with self.assertRaises(ValueError):
+            compare_candidates(prediction(),alternate(),[dict(segment_id='',start_offset=0,end_offset=1)])
+
+    def test_loader_pins_revision_and_disables_remote_code(self):
+        from unittest.mock import MagicMock
+        from jgrade_eval.alignment_cross_model import load_comparison_model, MODEL_REVISION
+        fake = MagicMock()
+        with patch('transformers.Wav2Vec2Processor.from_pretrained',return_value='processor') as proc, \
+                patch('transformers.Wav2Vec2ForCTC.from_pretrained',return_value=fake) as load, \
+                patch('torch.backends.mps.is_available',return_value=False), \
+                patch('torch.cuda.is_available',return_value=False):
+            model, processor, device = load_comparison_model()
+        self.assertIs(model,fake)
+        self.assertEqual(device,'cpu')
+        self.assertEqual(load.call_args.kwargs['revision'],MODEL_REVISION)
+        self.assertTrue(load.call_args.kwargs['weights_only'])
+        self.assertFalse(proc.call_args.kwargs['trust_remote_code'])
+        fake.to.assert_called_once_with('cpu')
+
+    def test_rank_largest_discrepancy_first_and_keep_invalid_units(self):
+        alt=alternate()
+        alt['alignment']['units'][1]['end_sec']=0.9
+        segments=[dict(segment_id='small',start_offset=0,end_offset=1),
+                  dict(segment_id='large',start_offset=1,end_offset=2)]
+        report=compare_candidates(prediction(),alt,segments)
+        self.assertEqual(report['items'][0]['segment_id'],'large')
+        alt['alignment']['units'][0]['start_sec']=-1
+        report=compare_candidates(prediction(),alt,segments)
+        self.assertEqual(report['compared_segments'],0)
+
     def test_deltas_are_not_gold_errors_or_scores(self):
         p = prediction()
         segments = [{"segment_id": "a", "start_offset": 0, "end_offset": 2}]
