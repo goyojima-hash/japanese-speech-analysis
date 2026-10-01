@@ -108,9 +108,11 @@ class AlignmentReviewTests(unittest.TestCase):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             dataset, _ = self.dataset(root)
-            with patch("librosa.load", return_value=(np.zeros(100), 16000)):
-                with self.assertRaises(ValueError):
-                    export_review(dataset, root / "bad")
+            with (
+                patch("librosa.load", return_value=(np.zeros(100), 16000)),
+                self.assertRaises(ValueError),
+            ):
+                export_review(dataset, root / "bad")
             path = dataset / "reference.json"
             ref = json.loads(path.read_text())
             ref["segments"][0]["segment_id"] = '=HYPERLINK("bad")'
